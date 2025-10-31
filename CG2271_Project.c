@@ -18,6 +18,9 @@
 #include "task.h"
 #include "semphr.h"
 
+/* Settings */
+#define MONITOR_ON 1 // comment this out if dont want print the resource allocation
+
 /* Buzzer pin - PTA12 uses TPM1_CH0 */
 #define BUZZER_PIN 12
 #define BUZZER_PORT PORTA
@@ -33,6 +36,9 @@
 #define BUTTON_GPIO GPIOA
 #define BUTTON_PORT_IRQ PORTA_IRQn
 #define BUTTON_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
+
+/* Monitor delay */
+#define MONITOR_DELAY_MS 3000 // It will print every 3 seconds
 
 /* Note definitions (frequencies in Hz) */
 #define NOTE_B3 247
@@ -61,7 +67,7 @@
 #define NOTE_REST 0
 
 /* Note duration definitions (in milliseconds) */
-#define TEMPO 600 // in bpm
+#define TEMPO 200 // in bpm
 #define QUARTER 60000 / TEMPO
 #define WHOLE QUARTER * 4
 #define HALF QUARTER * 2
@@ -162,7 +168,7 @@ void initBuzzer()
   // Configure channel 0 for high-true pulses
   // ELSnB = 1, ELSnA = 0
   BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnSC &= ~(TPM_CnSC_MSA(1) | TPM_CnSC_MSB(1) |
-                              TPM_CnSC_ELSA_MASK | TPM_CnSC_ELSB_MASK);
+                                                         TPM_CnSC_ELSA_MASK | TPM_CnSC_ELSB_MASK);
   BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnSC |= (TPM_CnSC_MSB(1) | TPM_CnSC_ELSB_MASK);
   // Set 50% duty cycle
   BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnV = 119; // 50% of 238
@@ -287,12 +293,12 @@ void playSong()
     }
     else
     {
-      PRINTF("Song interrupted - resource released\r\n");
+      PRINTF("Song interrupted - resource released\r\n"); // but this shouldnt happen, the uv light should also check.
       break;
     }
   }
 
-  PRINTF("♪♫ Song complete! ♫♪\r\n\r\n");
+  PRINTF("Song complete!\r\n\r\n");
 }
 
 /* ============================================================================
@@ -337,8 +343,9 @@ void buzzerTask(void *pvParameters)
     PRINTF("\r\nButton pressed! Requesting buzzer resource...\r\n");
 
     // Take mutex to check and modify electricity allocation
-    if (xSemaphoreTake(resourceMutex, portMAX_DELAY) == pdTRUE)
+    if (xSemaphoreTake(resourceMutex, portMAX_DELAY) == true)
     {
+
       // Check if resource is available
       if (electricity_allocation == NOTHING)
       {
@@ -369,9 +376,42 @@ void buzzerTask(void *pvParameters)
         xSemaphoreGive(resourceMutex);
       }
     }
+    else
+    {
+      PRINTF("[Buzzer] Unable to read resource status (mutex timeout)\r\n");
+    }
 
     PRINTF("Ready for next button press...\r\n");
     // Task will block again at the top of the loop
+  }
+}
+
+/**
+ * @brief   Monitor task - periodically displays electricity allocation status
+ */
+void monitorTask(void *pvParameters)
+{
+  PRINTF("Monitor task started\r\n\r\n");
+
+  const char *stateNames[] = {"NOTHING", "UV_LIGHTING", "BUZZER_PLAYING"};
+
+  while (1)
+  {
+    // Wait 2 seconds between status updates
+    vTaskDelay(pdMS_TO_TICKS(MONITOR_DELAY_MS));
+
+    // Read shared variable (protected by mutex)
+    if (xSemaphoreTake(resourceMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+    {
+      ResourceState currentState = electricity_allocation;
+      xSemaphoreGive(resourceMutex);
+
+      PRINTF("[Monitor] Electricity Allocation: %s\r\n", stateNames[currentState]);
+    }
+    else
+    {
+      PRINTF("[Monitor] Unable to read resource status (mutex timeout)\r\n");
+    }
   }
 }
 
@@ -379,7 +419,8 @@ void buzzerTask(void *pvParameters)
  * MAIN FUNCTION
  * ============================================================================ */
 
-void createBuzzerSemaphore() {
+void createBuzzerSemaphore()
+{
   // Create semaphore (binary semaphore for signaling)
   buzzerSemaphore = xSemaphoreCreateBinary();
   if (buzzerSemaphore == NULL)
@@ -391,23 +432,40 @@ void createBuzzerSemaphore() {
   PRINTF("Buzzer semaphore created\r\n");
 }
 
-void createResourceMutex() {
+void createResourceMutex()
+{
   // Create mutex for resource allocation (shared with UV light task)
   resourceMutex = xSemaphoreCreateMutex();
   if (resourceMutex == NULL)
   {
     PRINTF("ERROR: Failed to create resource mutex!\r\n");
     while (1)
-    ;
+      ;
   }
   PRINTF("Resource mutex created\r\n");
 }
 
+void createMonitorTask()
+{
+  if (xTaskCreate(monitorTask,
+                  "MonitorTask",
+                  configMINIMAL_STACK_SIZE + 100,
+                  NULL,
+                  tskIDLE_PRIORITY + 1, // higher priority is higher
+                  NULL) != pdPASS)
+  {
+    PRINTF("ERROR: Failed to create monitor task!\r\n");
+    while (1)
+      ;
+  }
+  PRINTF("Monitor task created\r\n");
+}
 
-void createBuzzerTask() {
+void createBuzzerTask()
+{
   if (xTaskCreate(buzzerTask,
                   "BuzzerTask",
-                  configMINIMAL_STACK_SIZE + 200,
+                  configMINIMAL_STACK_SIZE + 100,
                   NULL,
                   tskIDLE_PRIORITY + 2,
                   NULL) != pdPASS)
@@ -445,11 +503,14 @@ int main(void)
   initBuzzer();
   initButton();
 
-  // Initialise semaphores and mutexes
+  // Initialise sempaphores and mutexes
   createBuzzerSemaphore();
   createResourceMutex();
 
-  // Initialise tasks
+// Initialise tasks
+#if MONITOR_ON == 1
+  createMonitorTask();
+#endif
   createBuzzerTask();
 
   // Start the scheduler
