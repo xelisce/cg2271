@@ -47,8 +47,8 @@
 	#define ADC_CHANNEL 0
 	#define MAX_MSG_LEN 2 // send only 1 char + null terminator
 
-	#define BAD_MOISTURE 3000  // Very wet
-	#define MEDIUM_MOISTURE  2000  // Medium wet
+	#define BAD_MOISTURE 3000  // moisture > 3000 means too dry
+	#define MEDIUM_MOISTURE  2000  // 2000 < Moisture < 3000 means decent moisture
 
 	/* Monitor delay */
 	#define MONITOR_DELAY_MS 3000 // It will print every 3 seconds
