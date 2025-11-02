@@ -17,8 +17,8 @@
 #define UART_TX_PTE22    22
 #define UART_RX_PTE23    23
 #define UART2_INT_PRIO   128
-#define ADC_CHANNEL      3
-#define MAX_MSG_LEN      16
+#define ADC_CHANNEL      0
+#define MAX_MSG_LEN      2 // send only 1 char + null terminator
 
 #define GOOD_MOISTURE 3000  // Very wet
 #define MEDIUM_MOISTURE  1500  // Medium wet
@@ -27,6 +27,8 @@
  * Globals
  * ============================== */
 char send_buffer[MAX_MSG_LEN];
+
+QueueHandle_t queue;
 
 
 // // UART + ADC Function Prototypes
@@ -38,30 +40,6 @@ char send_buffer[MAX_MSG_LEN];
 
 
 // ADC Setup
-void initADC_poll(void)
-{
-    SIM->SCGC6 |= SIM_SCGC6_ADC0_MASK;
-    SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
-
-    // Set pin for ADC input (e.g., PTE22 → ADC0_SE3)
-    PORTE->PCR[ADC_PIN] &= ~PORT_PCR_MUX_MASK;
-    PORTE->PCR[ADC_PIN] |= PORT_PCR_MUX(0);
-
-    // ADC0 configuration
-    ADC0->CFG1 &= ~ADC_CFG1_MODE_MASK;
-    ADC0->CFG1 |= ADC_CFG1_MODE(0b01);   // 12-bit
-    ADC0->SC2 &= ~ADC_SC2_ADTRG_MASK;    // software trigger
-    ADC0->SC3 &= ~ADC_SC3_AVGE_MASK;     // disable averaging
-}
-
-uint16_t read_adc_channel_poll(int channel)
-{
-    ADC0->SC1[0] = ADC_SC1_ADCH(channel);
-    while (!(ADC0->SC1[0] & ADC_SC1_COCO_MASK)) {
-        ; // wait for conversion
-    }
-    return (uint16_t)ADC0->R[0];
-}
 
 // scales from 0 to 4096
 static uint8_t adc_to_level(uint16_t raw)
@@ -69,6 +47,65 @@ static uint8_t adc_to_level(uint16_t raw)
     if (raw > GOOD_MOISTURE) return 3;
     else if (raw > MEDIUM_MOISTURE) return 2;
     else return 1;
+}
+
+
+void initADC_poll()
+{
+    // disable IRQ since we are doing ADC polling
+	NVIC_DisableIRQ(ADC0_IRQn);
+	NVIC_ClearPendingIRQ(ADC0_IRQn);
+
+    SIM->SCGC6 |= SIM_SCGC6_ADC0_MASK;
+    SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
+
+    // Set pin for ADC input (e.g., PTE20 → ADC0_SE0)
+    PORTE->PCR[ADC_PIN] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[ADC_PIN] |= PORT_PCR_MUX(0); //ALT0
+
+    // Disable ADC interrupt since polling
+	ADC0->SC1[0] &= ~ADC_SC1_AIEN_MASK;
+
+    // Select Single ended mode ADC for PTE20 and disable diff mode
+	ADC0->SC1[0] &= ~ADC_SC1_DIFF_MASK;
+	ADC0->SC1[0] |= ADC_SC1_DIFF(0b0);
+
+    // Set 12 bit conversion
+	ADC0->CFG1 &= ~ADC_CFG1_MODE_MASK;
+	ADC0->CFG1 |= ADC_CFG1_MODE(0b01); // can try 0b00 for 8 bit conversion
+
+    // Use software trigger
+	ADC0->SC2 &= ~ADC_SC2_ADTRG_MASK;
+
+    // Use VALTH and VALTL
+	ADC0->SC2 &= ~ADC_SC2_REFSEL_MASK;
+	ADC0->SC2 |= ADC_SC2_REFSEL(0b01);
+
+    // Don't use averaging
+	ADC0->SC3 &= ~ADC_SC3_AVGE_MASK;
+	ADC0->SC3 |= ADC_SC3_AVGE(0);
+
+    	// Use continuous conversion
+	ADC0->SC3 &= ~ADC_SC3_ADCO_MASK;
+	ADC0->SC3 |= ADC_SC3_ADCO(0); // single continuous conversion mode
+}
+
+
+void startADC(int channel){
+    PRINTF("Started ADC on channel %d. Waiting\r\n", channel);
+
+	ADC0->SC1[0] &= ~ADC_SC1_ADCH_MASK;
+	ADC0->SC1[0] |= ADC_SC1_ADCH(channel);
+}
+
+
+uint16_t read_adc_channel_poll(int channel)
+{
+    ADC0->SC1[0] = ADC_SC1_ADCH(channel);
+    while (!(ADC0->SC1[0] & ADC_SC1_COCO_MASK)) {
+        ; // wait for conversion (polling)
+    }
+    return (int)ADC0->R[0];
 }
 
 
@@ -95,12 +132,11 @@ void initUART2(uint32_t baud_rate)
     UART2->BDL = (uint8_t)(sbr & 0xFF);
 
     UART2->C1 = 0x00; // 8-bit, no parity
-    UART2->C2 |= UART_C2_RIE_MASK; // enable RX interrupt (not strictly needed here)
     UART2->C2 |= UART_C2_RE_MASK;  // enable receiver (for safety)
 
     NVIC_SetPriority(UART2_FLEXIO_IRQn, UART2_INT_PRIO);
     NVIC_ClearPendingIRQ(UART2_FLEXIO_IRQn);
-    NVIC_EnableIRQ(UART2_FLEXIO_IRQn);
+//    NVIC_EnableIRQ(UART2_FLEXIO_IRQn);
 }
 
 
@@ -130,6 +166,15 @@ void sendMessage(char *message)
 }
 
 
+//static void recvTask(void *p) {
+//	while(1) {
+//		if(xQueueReceive(queue, (TMessage *) &msg, portMAX_DELAY) == pdTRUE) {
+//			PRINTF("Received message: %s\r\n", msg.message);
+//		}
+//	}
+//}
+
+
 // Soil Moisture Task
 static void soilTask(void *p)
 {
@@ -139,9 +184,12 @@ static void soilTask(void *p)
         uint16_t raw = read_adc_channel_poll(ADC_CHANNEL);
         uint8_t level = adc_to_level(raw);
 
-        char msg[4];
-        sprintf(msg, "%c\n", '0' + level);
+        char msg[2];
+        msg[0] = '0' + level;
+        msg[1] = '\0';
 
+        // Print for debugging
+        PRINTF("Water level is at %c\n", msg[0]);
         PRINTF("Raw ADC: %d, Level: %d\r\n", raw, level);
 
         sendMessage(msg);
@@ -162,8 +210,7 @@ int main(void)
 
     initADC_poll();
     initUART2(BAUD_RATE);
-
-    PRINTF("Soil Moisture TX Started\r\n");
+    startADC(ADC_CHANNEL);
 
     xTaskCreate(soilTask, "SoilTask", configMINIMAL_STACK_SIZE + 200, NULL, 1, NULL);
     vTaskStartScheduler();
