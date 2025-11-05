@@ -22,10 +22,10 @@
 #define MONITOR_ON 1 // comment this out if dont want print the resource allocation
 
 /* UV LED Configuration */
-#define UV_LED_PIN 0
-#define UV_LED_PORT PORTB
-#define UV_LED_GPIO GPIOB
-#define UV_LED_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTB_MASK
+#define UV_LED_PIN 4
+#define UV_LED_PORT PORTA
+#define UV_LED_GPIO GPIOA
+#define UV_LED_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
 
 #define LED_ON_DURATION 5000 // ms
 
@@ -58,12 +58,12 @@
 #define BUTTON_PORT_IRQ PORTA_IRQn
 #define BUTTON_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
 
-/* Flame pin - PTB18 */
-#define FLAME_PIN 18
-#define FLAME_PORT PORTB
-#define FLAME_GPIO GPIOB
-#define FLAME_PORT_IRQ PORTA_IRQn
-#define FLAME_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTB_MASK
+/* Flame pin - PTC0 */
+#define FLAME_PIN 0
+#define FLAME_PORT PORTC
+#define FLAME_GPIO GPIOC
+#define FLAME_PORT_IRQ PORTC_PORTD_IRQn
+#define FLAME_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTC_MASK
 
 // Soil Moisture pins
 #define ADC_PIN 20 // PTE20
@@ -78,7 +78,7 @@
 #define MEDIUM_MOISTURE 2000 // 2000 < Moisture < 3000 means decent moisture
 
 /* Monitor delay */
-#define MONITOR_DELAY_MS 3000 // It will print every 3 seconds
+#define MONITOR_DELAY_MS 100
 
 /* Note definitions (frequencies in Hz) */
 #define NOTE_B3 247
@@ -139,7 +139,7 @@ char send_buffer[MAX_MSG_LEN];
 
 /* RTOS Handles */
 SemaphoreHandle_t buzzerSemaphore;       // Released when the button is pressed
-SemaphoreHandle_t resourceMutex;         // Shared mutex for resource allocation, prevent conflicting access to electricity allocation
+SemaphoreHandle_t resourceMutex = NULL;  // Shared mutex for resource allocation, prevent conflicting access to electricity allocation
 SemaphoreHandle_t flamePresentSemaphore; // Released when there is a fire
 SemaphoreHandle_t flameAbsentSemaphore;  // Released when there is a fire
 SemaphoreHandle_t ledSemaphore;          // Semaphore for LED control
@@ -237,7 +237,7 @@ void initFlame()
   FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_MUX(0b001);
   // Set pull-up resistor
   FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PS_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_PS_MASK; // Pull-up
+  FLAME_PORT->PCR[FLAME_PIN] |= ~PORT_PCR_PS_MASK; // Pull-down
   FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PE_MASK;
   FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_PE_MASK; // Pull enable
   // Set as input
@@ -268,18 +268,8 @@ void initButton()
   // Configure interrupt on falling edge (button press)
   BUTTON_PORT->PCR[BUTTON_PIN] &= ~PORT_PCR_IRQC_MASK;
   BUTTON_PORT->PCR[BUTTON_PIN] |= PORT_PCR_IRQC(0b1010);
-  // Enable PORTA interrupt
-  NVIC_SetPriority(BUTTON_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
-  NVIC_ClearPendingIRQ(BUTTON_PORT_IRQ);
-  NVIC_EnableIRQ(BUTTON_PORT_IRQ);
   // Feedback
   PRINTF("Button initialized on PTA13\r\n");
-}
-
-void initAllInterrupts() {
-  // Enable timer interrupt for buzzer
-  NVIC_SetPriority(BUZZER_TIMER_IRQ, 1); // High priority (0 = highest, 192 = lowest)
-  NVIC_EnableIRQ(BUZZER_TIMER_IRQ);
 }
 
 void startADC(int channel)
@@ -362,10 +352,6 @@ void initUART2(uint32_t baud_rate)
   // Enable the receiver
   UART2->C2 |= UART_C2_RE_MASK;
 
-  NVIC_SetPriority(UART2_FLEXIO_IRQn, UART2_INT_PRIO);
-  NVIC_ClearPendingIRQ(UART2_FLEXIO_IRQn);
-  NVIC_EnableIRQ(UART2_FLEXIO_IRQn);
-
   PRINTF("UART2 initialized on RX=PTE%d, TX=PTE%d\r\n", UART_RX, UART_TX);
 }
 
@@ -375,7 +361,7 @@ void initUART2(uint32_t baud_rate)
 void initLED(void)
 {
   // Set up the clock gating
-  SIM->SCGC5 |= SIM_SCGC5_PORTA_MASK;
+  SIM->SCGC5 |= UV_LED_PORT_CLOCK_GATING_MASK;
   PORTA->PCR[UV_LED_PIN] &= ~PORT_PCR_MUX_MASK;
   PORTA->PCR[UV_LED_PIN] = PORT_PCR_MUX(1);
   GPIOA->PDDR |= (1 << UV_LED_PIN);
@@ -406,6 +392,25 @@ void initMotor()
   PRINTF("  - Control: Direct H-bridge (no EN pin)\r\n");
 }
 
+void initAllInterrupts()
+{
+  // Enable timer interrupt for buzzer
+  NVIC_SetPriority(BUZZER_TIMER_IRQ, 1); // High priority (0 = highest, 192 = lowest)
+  NVIC_EnableIRQ(BUZZER_TIMER_IRQ);
+  // Enable PORTC interrupt for flame sensor
+  NVIC_SetPriority(FLAME_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
+  NVIC_ClearPendingIRQ(FLAME_PORT_IRQ);
+  NVIC_EnableIRQ(FLAME_PORT_IRQ);
+  // Enable PORTA interrupt for button
+  NVIC_SetPriority(BUTTON_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
+  NVIC_ClearPendingIRQ(BUTTON_PORT_IRQ);
+  NVIC_EnableIRQ(BUTTON_PORT_IRQ);
+  // Enable UART interrupts for comms
+  NVIC_SetPriority(UART2_FLEXIO_IRQn, UART2_INT_PRIO);
+  NVIC_ClearPendingIRQ(UART2_FLEXIO_IRQn);
+  NVIC_EnableIRQ(UART2_FLEXIO_IRQn);
+}
+
 /* ============================================================================
  * LED CONTROL FUNCTIONS
  * ============================================================================ */
@@ -415,7 +420,7 @@ void initMotor()
  */
 void turnLEDOn(void)
 {
-  GPIOA->PCOR |= (1 << UV_LED_PIN);
+  UV_LED_GPIO->PCOR |= (1 << UV_LED_PIN);
 }
 
 /**
@@ -423,7 +428,7 @@ void turnLEDOn(void)
  */
 void turnLEDOff(void)
 {
-  GPIOA->PSOR |= (1 << UV_LED_PIN);
+  UV_LED_GPIO->PSOR |= (1 << UV_LED_PIN);
 }
 
 /* ============================================================================
@@ -610,8 +615,6 @@ void PORTA_IRQHandler(void)
   // Check if our button (PTA13) triggered the interrupt
   if (PORTA->ISFR & (1 << BUTTON_PIN))
   {
-    // Clear interrupt flag
-    BUTTON_PORT->ISFR |= (1 << BUTTON_PIN);
     // Give semaphore to wake up buzzer task
     xSemaphoreGiveFromISR(buzzerSemaphore, &xHigherPriorityTaskWoken);
     // Perform context switch if needed
@@ -619,13 +622,18 @@ void PORTA_IRQHandler(void)
     // Clear ISFR (Interrupt Status Flag Register)
     PORTA->ISFR |= (1 << BUTTON_PIN);
   }
+}
+
+void PortC_PORTD_IRQHandler(void)
+{
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  // Clear pending IRQ
+  NVIC_ClearPendingIRQ(PORTC_PORTD_IRQn);
   // Check if our flame sensor (PTB18) triggered the interrupt
-  else if (PORTB->ISFR & (1 << FLAME_PIN))
+  if (PORTC->ISFR & (1 << FLAME_PIN))
   {
     // Read the current pin state
-    uint32_t pinState = (GPIOB->PDIR >> FLAME_PIN) & 1;
-    // Clear interrupt flag
-    FLAME_PORT->ISFR |= (1 << FLAME_PIN);
+    uint32_t pinState = (GPIOC->PDIR >> FLAME_PIN) & 1;
     // Give semaphore to wake up motor task
     if (pinState)
     {
@@ -637,8 +645,8 @@ void PORTA_IRQHandler(void)
     }
     // Perform context switch if needed
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    PORTB->ISFR |= (1 << FLAME_PIN);
-  } 
+    PORTC->ISFR |= (1 << FLAME_PIN);
+  }
 }
 
 /* ============================================================================
@@ -872,7 +880,10 @@ void monitorTask(void *pvParameters)
       ResourceState currentState = electricity_allocation;
       xSemaphoreGive(resourceMutex);
 
-      PRINTF("[Monitor] Electricity Allocation: %s\r\n", stateNames[currentState]);
+      PRINTF("[Monitor] State: %s | Free heap: %u | Min heap: %u\r\n",
+             stateNames[currentState],
+             xPortGetFreeHeapSize(),
+             xPortGetMinimumEverFreeHeapSize());
     }
     else
     {
@@ -977,7 +988,7 @@ void createMonitorTask()
 {
   if (xTaskCreate(monitorTask,
                   "MonitorTask",
-                  configMINIMAL_STACK_SIZE + 100,
+                  configMINIMAL_STACK_SIZE + 300,
                   NULL,
                   tskIDLE_PRIORITY + 1, // higher priority is higher
                   NULL) != pdPASS)
@@ -1011,7 +1022,7 @@ void createBuzzerTask()
                   "BuzzerTask",
                   configMINIMAL_STACK_SIZE + 100,
                   NULL,
-                  tskIDLE_PRIORITY + 2,
+                  tskIDLE_PRIORITY + 1,
                   NULL) != pdPASS)
   {
     PRINTF("ERROR: Failed to create buzzer task!\r\n");
@@ -1027,7 +1038,7 @@ void createMotorRollTask()
                   "MotorRollTask",
                   configMINIMAL_STACK_SIZE + 100,
                   NULL,
-                  tskIDLE_PRIORITY + 2,
+                  tskIDLE_PRIORITY + 1,
                   NULL) != pdPASS)
   {
     PRINTF("ERROR: Failed to create motor roll task!\r\n");
@@ -1043,7 +1054,7 @@ void createMotorUnrollTask()
                   "MotorUnrollTask",
                   configMINIMAL_STACK_SIZE + 100,
                   NULL,
-                  tskIDLE_PRIORITY + 2,
+                  tskIDLE_PRIORITY + 1,
                   NULL) != pdPASS)
   {
     PRINTF("ERROR: Failed to create motor unroll task!\r\n");
@@ -1060,7 +1071,7 @@ void createSoilTask()
           "SoilTask",
           configMINIMAL_STACK_SIZE + 100,
           NULL,
-          tskIDLE_PRIORITY + 3,
+          tskIDLE_PRIORITY + 1,
           NULL) != pdPASS)
   {
     PRINTF("ERROR: Failed to create soil task!\r\n");
@@ -1075,7 +1086,7 @@ void createUARTTask()
   // Create UART task
   if (xTaskCreate(readUARTTask,
                   "UARTTask",
-                  configMINIMAL_STACK_SIZE + 200,
+                  configMINIMAL_STACK_SIZE + 100,
                   NULL,
                   tskIDLE_PRIORITY + 2, // Higher priority for UART
                   NULL) != pdPASS)
@@ -1112,38 +1123,42 @@ int main(void)
   setTPMClock();
   initBuzzer();
   initButton();
-  initMotor();
-  initFlame();
-  initLED();
+  // initMotor();
+  // initFlame();
+  // initLED();
 
   // Initialize Soil Moisture Sensor ADC and UART
-  initSoilADC();
-  initUART2(SOIL_BAUD);
-  startADC(ADC_CHANNEL);
-
-  PRINTF("Soil Moisture TX Started\r\n");
+  // initSoilADC();
+  // initUART2(SOIL_BAUD);
+  // PRINTF("Soil Moisture TX Started\r\n");
 
   // Initialise sempaphores and mutexes
   createResourceMutex();
 
   createBuzzerSemaphore();
-  createFlamePresentSemaphore();
-  createFlameAbsentSemaphore();
-  createLEDSemaphore();
+  // createFlamePresentSemaphore();
+  // createFlameAbsentSemaphore();
+  // createLEDSemaphore();
+
+  // Begin interrupts and stuff
+  initAllInterrupts();
+  // startADC(ADC_CHANNEL);
 
   // Initialise tasks
 #if MONITOR_ON == 1
   createMonitorTask();
 #endif
   createBuzzerTask();
-  createSoilTask();
-  createMotorRollTask();
-  createMotorUnrollTask();
-  createUARTTask();
-  createLEDTask();
+  // createSoilTask();
+  // createMotorRollTask();
+  // createMotorUnrollTask();
+  // createUARTTask();
+  // createLEDTask();
 
   // Start the scheduler
   PRINTF("\r\nStarting FreeRTOS scheduler...\r\n");
+  PRINTF("About to start scheduler. Heap free: %d bytes\r\n",
+         xPortGetFreeHeapSize());
   vTaskStartScheduler();
 
   // Print instructions

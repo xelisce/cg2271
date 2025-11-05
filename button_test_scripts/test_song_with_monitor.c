@@ -38,7 +38,7 @@
 #define BUTTON_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
 
 /* Monitor delay */
-#define MONITOR_DELAY_MS 3000 // It will print every 3 seconds
+#define MONITOR_DELAY_MS 30 // It will print every 3 seconds
 
 /* Note definitions (frequencies in Hz) */
 #define NOTE_B3 247
@@ -67,7 +67,7 @@
 #define NOTE_REST 0
 
 /* Note duration definitions (in milliseconds) */
-#define TEMPO 200 // in bpm
+#define TEMPO 5000 // in bpm
 #define QUARTER 60000 / TEMPO
 #define WHOLE QUARTER * 4
 #define HALF QUARTER * 2
