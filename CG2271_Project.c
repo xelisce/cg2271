@@ -787,6 +787,7 @@ int main(void)
   setTPMClock();
   initBuzzer();
   initButton();
+  initMotor();
 
   // Initialize Soil Moisture Sensor ADC and UART
   initSoilADC();
@@ -804,10 +805,10 @@ int main(void)
   createMonitorTask();
 #endif
   createBuzzerTask();
-  create
+  createSoilTask();
 
-      // Start the scheduler
-      PRINTF("\r\nStarting FreeRTOS scheduler...\r\n");
+  // Start the scheduler
+  PRINTF("\r\nStarting FreeRTOS scheduler...\r\n");
   vTaskStartScheduler();
 
   // Print instructions
