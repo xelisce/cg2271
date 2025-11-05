@@ -36,8 +36,8 @@
 #define UART2_INT_PRIO 128
 
 /* Motor Pins*/
-#define MOTOR_IN1_PIN 1 // PTA1 - Direction/Speed control 1
-#define MOTOR_IN2_PIN 2 // PTA2 - Direction/Speed control 2
+#define MOTOR_IN1_PIN 5 // PTA5 - 
+#define MOTOR_IN2_PIN 13 // PTA13 - 
 #define MOTOR_PORT PORTA
 #define MOTOR_GPIO GPIOA
 #define MOTOR_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
