@@ -21,16 +21,12 @@
 /* Settings */
 #define MONITOR_ON 1 // comment this out if dont want print the resource allocation
 
-/* Motor settings for rolling/unrolling shutter */
-#define MOTOR_IN1_PIN 1 // PTA1 - Direction control 1
-#define MOTOR_IN2_PIN 2 // PTA2 - Direction control 2
-#define MOTOR_EN_PIN 5  // PTA5 - PWM Enable (using TPM0_CH2)
+/* Motor Pins*/
+#define MOTOR_IN1_PIN 1      // PTA1 - Direction/Speed control 1
+#define MOTOR_IN2_PIN 2      // PTA2 - Direction/Speed control 2
 #define MOTOR_PORT PORTA
 #define MOTOR_GPIO GPIOA
-#define MOTOR_TIMER TPM0
-#define MOTOR_TIMER_CHANNEL 2
 #define MOTOR_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
-#define MOTOR_TIMER_CLOCK_GATING_MASK SIM_SCGC6_TPM0_MASK
 
 /* Buzzer pin - PTA12 uses TPM1_CH0 */
 #define BUZZER_PIN 12
@@ -317,51 +313,27 @@ void initUART2(uint32_t baud_rate)
 
 void initMotor()
 {
-  // Turn on clock gating to TPM0
-  SIM->SCGC6 |= MOTOR_TIMER_CLOCK_GATING_MASK;
   // Turn on clock gating to PORTA
   SIM->SCGC5 |= MOTOR_PORT_CLOCK_GATING_MASK;
-
-  // Configure IN1 and IN2 as GPIO outputs (direction control)
+  
+  // Configure IN1 and IN2 as GPIO outputs
   MOTOR_PORT->PCR[MOTOR_IN1_PIN] &= ~PORT_PCR_MUX_MASK;
   MOTOR_PORT->PCR[MOTOR_IN1_PIN] |= PORT_PCR_MUX(0b001); // GPIO
   MOTOR_PORT->PCR[MOTOR_IN2_PIN] &= ~PORT_PCR_MUX_MASK;
   MOTOR_PORT->PCR[MOTOR_IN2_PIN] |= PORT_PCR_MUX(0b001); // GPIO
-
+  
   // Set IN1 and IN2 as outputs
   MOTOR_GPIO->PDDR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PDDR |= (1 << MOTOR_IN2_PIN);
-
+  
   // Initialize both to LOW (motor stopped)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
-
-  // Configure EN pin for PWM (TPM0_CH2 is Alt 3 on PTA5)
-  MOTOR_PORT->PCR[MOTOR_EN_PIN] &= ~PORT_PCR_MUX_MASK;
-  MOTOR_PORT->PCR[MOTOR_EN_PIN] |= PORT_PCR_MUX(0b011); // Alt 3 for TPM0_CH2
-
-  // Set up TPM0 for motor PWM
-  // Turn off TPM0 and clear the prescaler field
-  MOTOR_TIMER->SC &= ~(TPM_SC_CMOD_MASK | TPM_SC_PS_MASK);
-  // Set prescaler to 128 (62500Hz)
-  MOTOR_TIMER->SC |= TPM_SC_PS(0x7);
-  // Select edge-aligned PWM mode
-  MOTOR_TIMER->SC &= ~TPM_SC_CPWMS_MASK;
-  // Initialize count
-  MOTOR_TIMER->CNT = 0;
-  // Set MOD for PWM frequency (e.g., 1kHz: 62500/1000 = 62)
-  MOTOR_TIMER->MOD = 625; // 100Hz PWM
-
-  // Configure channel for edge-aligned PWM with high-true pulses
-  MOTOR_TIMER->CONTROLS[MOTOR_TIMER_CHANNEL].CnSC &= ~(TPM_CnSC_MSA(1) | TPM_CnSC_MSB(1) |
-                                                       TPM_CnSC_ELSA_MASK | TPM_CnSC_ELSB_MASK);
-  MOTOR_TIMER->CONTROLS[MOTOR_TIMER_CHANNEL].CnSC |= (TPM_CnSC_MSB(1) | TPM_CnSC_ELSB_MASK);
-
-  // Set 100% duty cycle (full speed)
-  MOTOR_TIMER->CONTROLS[MOTOR_TIMER_CHANNEL].CnV = 625; // 100% of 625
-
-  // Start the timer
-  MOTOR_TIMER->SC |= TPM_SC_CMOD(0b01);
+  
+  PRINTF("Motor driver (DRV8833) initialized:\r\n");
+  PRINTF("  - IN1: PTA%d\r\n", MOTOR_IN1_PIN);
+  PRINTF("  - IN2: PTA%d\r\n", MOTOR_IN2_PIN);
+  PRINTF("  - Control: Direct H-bridge (no EN pin)\r\n");
 }
 
 /* ============================================================================
@@ -650,36 +622,36 @@ static void soilTask(void *p)
 void rollShutter()
 {
   PRINTF("Rolling shutter (moving forward for 5 seconds)...\r\n");
-
-  // Set direction: IN1=HIGH, IN2=LOW (forward)
-  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN1_PIN); // Set IN1 HIGH
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN); // Set IN2 LOW
-
-  // Motor runs for 5 seconds (PWM already enabled)
+  
+  // Set direction: IN1=HIGH, IN2=LOW (forward at full speed)
+  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN1_PIN);  // Set IN1 HIGH
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);  // Set IN2 LOW
+  
+  // Motor runs for 5 seconds
   vTaskDelay(pdMS_TO_TICKS(5000));
-
-  // Stop motor: IN1=LOW, IN2=LOW
+  
+  // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
-
+  
   PRINTF("Shutter rolled. Motor stopped.\r\n");
 }
 
 void unrollShutter()
 {
   PRINTF("Unrolling shutter (reversing for 5 seconds)...\r\n");
-
-  // Set direction: IN1=LOW, IN2=HIGH (reverse)
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN); // Set IN1 LOW
-  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN2_PIN); // Set IN2 HIGH
-
-  // Motor runs for 5 seconds (PWM already enabled)
+  
+  // Set direction: IN1=LOW, IN2=HIGH (reverse at full speed)
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);  // Set IN1 LOW
+  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN2_PIN);  // Set IN2 HIGH
+  
+  // Motor runs for 5 seconds
   vTaskDelay(pdMS_TO_TICKS(5000));
-
-  // Stop motor: IN1=LOW, IN2=LOW
+  
+  // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
-
+  
   PRINTF("Shutter unrolled. Motor stopped.\r\n");
 }
 
