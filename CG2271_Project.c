@@ -48,6 +48,13 @@
 #define BUTTON_PORT_IRQ PORTA_IRQn
 #define BUTTON_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
 
+/* Flame pin - PTB18 */
+#define FLAME_PIN 18
+#define FLAME_PORT PORTB
+#define FLAME_GPIO GPIOB
+#define FLAME_PORT_IRQ PORTB_IRQn
+#define FLAME_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTB_MASK
+
 // Soil Moisture pins
 #define ADC_PIN 20 // PTE20
 #define UART_TX_PTE22 22
@@ -121,8 +128,9 @@ const uint8_t melody_length = sizeof(melody) / sizeof(melody[0]);
 char send_buffer[MAX_MSG_LEN];
 
 /* RTOS Handles */
-SemaphoreHandle_t buzzerSemaphore;
-SemaphoreHandle_t resourceMutex; // Shared mutex for resource allocation
+SemaphoreHandle_t buzzerSemaphore; // Released when the button is pressed
+SemaphoreHandle_t resourceMutex; // Shared mutex for resource allocation, prevent conflicting access to electricity allocation
+SemaphoreHandle_t flameSemaphore; // Released when there is a fire
 
 /* Resource allocation states */
 typedef enum
@@ -207,6 +215,33 @@ void initBuzzer()
   // Enable timer interrupt
   NVIC_SetPriority(BUZZER_TIMER_IRQ, 1); // High priority (0 = highest, 192 = lowest)
   NVIC_EnableIRQ(BUZZER_TIMER_IRQ);
+}
+
+void initFlame()
+{
+  // Disable interrupts during setup
+  NVIC_DisableIRQ(FLAME_PORT_IRQ);
+  // Enable clock to PORTB
+  SIM->SCGC5 |= FLAME_PORT_CLOCK_GATING_MASK;
+  // Configure PTB18 as GPIO
+  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_MUX_MASK;
+  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_MUX(0b001);
+  // Set pull-up resistor
+  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PS_MASK;
+  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_PS_MASK; // Pull-up
+  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PE_MASK;
+  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_PE_MASK; // Pull enable
+  // Set as input
+  FLAME_GPIO->PDDR &= ~(1 << FLAME_PIN);
+  // Configure interrupt on either edge (flame change, whether present to not or other way around)
+  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_IRQC_MASK;
+  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_IRQC(0b1011);
+  // Enable PORTB interrupt
+  NVIC_SetPriority(FLAME_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
+  NVIC_ClearPendingIRQ(FLAME_PORT_IRQ);
+  NVIC_EnableIRQ(FLAME_PORT_IRQ);
+  // Feedback
+  PRINTF("Flame sensor initialized on PTB18\r\n");
 }
 
 void initButton()
@@ -529,6 +564,74 @@ void PORTA_IRQHandler(void)
   PORTA->ISFR |= (1 << BUTTON_PIN);
 }
 
+void PORTB_IRQHandler(void)
+{
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  // Clear pending IRQ
+  NVIC_ClearPendingIRQ(PORTB_IRQn);
+  // Check if our flame sensor (PTB18) triggered the interrupt
+  if (PORTB->ISFR & (1 << FLAME_PIN))
+  {
+    // Read the current pin state
+    uint32_t pinState = (GPIOB->PDIR >> FLAME_PIN) & 1;
+    // Clear interrupt flag
+    FLAME_PORT->ISFR |= (1 << FLAME_PIN);
+    // Give semaphore to wake up motor task
+    if (pinState)
+    {
+      xSemaphoreGiveFromISR(flamePresentSemaphore, &xHigherPriorityTaskWoken);
+    }
+    else
+    {
+      xSemaphoreGiveFromISR(flameAbsentSemaphore, &xHigherPriorityTaskWoken);
+    }
+    // Perform context switch if needed
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+  }
+  // Clear ISFR (Interrupt Status Flag Register)
+  PORTB->ISFR |= (1 << FLAME_PIN);
+}
+
+/* ============================================================================
+ * MOTOR FUNCTIONS
+ * ============================================================================ */
+
+void rollShutter()
+{
+  PRINTF("Rolling shutter (moving forward for 5 seconds)...\r\n");
+
+  // Set direction: IN1=HIGH, IN2=LOW (forward)
+  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN1_PIN); // Set IN1 HIGH
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN); // Set IN2 LOW
+
+  // Motor runs for 5 seconds (PWM already enabled)
+  vTaskDelay(pdMS_TO_TICKS(5000));
+
+  // Stop motor: IN1=LOW, IN2=LOW
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
+
+  PRINTF("Shutter rolled. Motor stopped.\r\n");
+}
+
+void unrollShutter()
+{
+  PRINTF("Unrolling shutter (reversing for 5 seconds)...\r\n");
+
+  // Set direction: IN1=LOW, IN2=HIGH (reverse)
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN); // Set IN1 LOW
+  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN2_PIN); // Set IN2 HIGH
+
+  // Motor runs for 5 seconds (PWM already enabled)
+  vTaskDelay(pdMS_TO_TICKS(5000));
+
+  // Stop motor: IN1=LOW, IN2=LOW
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
+
+  PRINTF("Shutter unrolled. Motor stopped.\r\n");
+}
+
 /* ============================================================================
  * RTOS TASKS
  * ============================================================================ */
@@ -592,6 +695,42 @@ void buzzerTask(void *pvParameters)
 }
 
 /**
+ * @brief   Flame task - waits for semaphore, then unrolls shutter
+ */
+void motorUnrollTask(void *pvParameters)
+{
+  PRINTF("Motor unroll task started - waiting for flame on\r\n");
+
+  while (1)
+  {
+    // Wait for flame on (blocks here until semaphore given)
+    xSemaphoreTake(flamePresentSemaphore, portMAX_DELAY);
+
+    PRINTF("\r\nFlame present! Requesting motor unroll...\r\n");
+    unrollShutter();
+    PRINTF("\r\nFinished unrolling");
+  }
+}
+
+/**
+ * @brief   Flame task - waits for semaphore, then rolls shutter
+ */
+void motorRollTask(void *pvParameters)
+{
+  PRINTF("Motor roll task started - waiting for flame off\r\n");
+
+  while (1)
+  {
+    // Wait for flame off (blocks here until semaphore given)
+    xSemaphoreTake(flameAbsentSemaphore, portMAX_DELAY);
+
+    PRINTF("\r\nFlame absent! Requesting motor roll...\r\n");
+    rollShutter();
+    PRINTF("\r\nFinished rolling");
+  }
+}
+
+/**
  * @brief   Monitor task - periodically displays electricity allocation status
  */
 void monitorTask(void *pvParameters)
@@ -641,46 +780,6 @@ static void soilTask(void *p)
 
     vTaskDelay(delay);
   }
-}
-
-/* ============================================================================
- * MOTOR FUNCTIONS
- * ============================================================================ */
-
-void rollShutter()
-{
-  PRINTF("Rolling shutter (moving forward for 5 seconds)...\r\n");
-
-  // Set direction: IN1=HIGH, IN2=LOW (forward)
-  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN1_PIN); // Set IN1 HIGH
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN); // Set IN2 LOW
-
-  // Motor runs for 5 seconds (PWM already enabled)
-  vTaskDelay(pdMS_TO_TICKS(5000));
-
-  // Stop motor: IN1=LOW, IN2=LOW
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
-
-  PRINTF("Shutter rolled. Motor stopped.\r\n");
-}
-
-void unrollShutter()
-{
-  PRINTF("Unrolling shutter (reversing for 5 seconds)...\r\n");
-
-  // Set direction: IN1=LOW, IN2=HIGH (reverse)
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN); // Set IN1 LOW
-  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN2_PIN); // Set IN2 HIGH
-
-  // Motor runs for 5 seconds (PWM already enabled)
-  vTaskDelay(pdMS_TO_TICKS(5000));
-
-  // Stop motor: IN1=LOW, IN2=LOW
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
-
-  PRINTF("Shutter unrolled. Motor stopped.\r\n");
 }
 
 /* ============================================================================
@@ -745,10 +844,42 @@ void createBuzzerTask()
   PRINTF("Buzzer task created\r\n");
 }
 
+void createMotorRollTask()
+{
+  if (xTaskCreate(motorRollTask,
+                  "MotorRollTask",
+                  configMINIMAL_STACK_SIZE + 100,
+                  NULL,
+                  tskIDLE_PRIORITY + 2,
+                  NULL) != pdPASS)
+  {
+    PRINTF("ERROR: Failed to create motor roll task!\r\n");
+    while (1)
+      ;
+  }
+  PRINTF("Motor roll task created\r\n");
+}
+
+void createMotorUnrollTask()
+{
+  if (xTaskCreate(motorUnrollTask,
+                  "MotorUnrollTask",
+                  configMINIMAL_STACK_SIZE + 100,
+                  NULL,
+                  tskIDLE_PRIORITY + 2,
+                  NULL) != pdPASS)
+  {
+    PRINTF("ERROR: Failed to create motor unroll task!\r\n");
+    while (1)
+      ;
+  }
+  PRINTF("Motor unroll task created\r\n");
+}
+
 void createSoilTask()
 {
   if (xTaskCreate(
-          soilTask, 
+          soilTask,
           "SoilTask",
           configMINIMAL_STACK_SIZE + 100,
           NULL,
@@ -805,9 +936,11 @@ int main(void)
 #endif
   createBuzzerTask();
   createSoilTask();
+  createMotorRollTask();
+  createMotorUnrollTask();
 
-      // Start the scheduler
-      PRINTF("\r\nStarting FreeRTOS scheduler...\r\n");
+  // Start the scheduler
+  PRINTF("\r\nStarting FreeRTOS scheduler...\r\n");
   vTaskStartScheduler();
 
   // Print instructions
