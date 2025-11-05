@@ -15,8 +15,7 @@ const int PIN_B = 21;
 const int TRIG_PIN = 14;
 const int ECHO_PIN = 15;
 const float DISTANCE_THRESHOLD_CM = 15.0;
-
-const unsigned long SEND_INTERVAL_MS = 10000UL; // send via uart every 60 seconds
+const unsigned long SEND_INTERVAL_MS = 1000UL; // send via uart every 60 seconds
 
 // ---------- GLOBALS ----------
 volatile bool pressOccurred = false;
@@ -190,7 +189,7 @@ void loop() {
   unsigned long now = millis();
   if (now - lastSendMillis >= SEND_INTERVAL_MS) {
     lastSendMillis = now;
-    char outChar = pressOccurred ? '1' : '0';
+    char outChar = pressOccurred ? 'y' : 'n';
     
     // Send via UART
     uart_write_bytes(UART_NUM, &outChar, 1);
