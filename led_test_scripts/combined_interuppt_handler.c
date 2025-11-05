@@ -9,6 +9,7 @@
  * @brief   Combined UV LED control with UART and LED timer tasks
  */
 #include <stdio.h>
+#include <string.h>
 #include "board.h"
 #include "peripherals.h"
 #include "pin_mux.h"
@@ -183,7 +184,15 @@ void turnLEDOff(void)
 /* ============================================================================
  * UART FUNCTIONS
  * ============================================================================ */
-
+/**
+ * @brief   Send message via UART (for soil moisture)
+ */
+void sendMessage(char *message)
+{
+    strncpy(send_buffer, message, MAX_MSG_LEN);
+    UART2->C2 |= UART_C2_TIE_MASK;  // Enable TX interrupt
+    UART2->C2 |= UART_C2_TE_MASK;   // Ensure transmitter is enabled
+}
 
 /* ============================================================================
  * UART INTERRUPT HANDLER (Receive Only)
