@@ -22,8 +22,8 @@
 #define MONITOR_ON 1 // comment this out if dont want print the resource allocation
 
 /* Motor Pins*/
-#define MOTOR_IN1_PIN 1      // PTA1 - Direction/Speed control 1
-#define MOTOR_IN2_PIN 2      // PTA2 - Direction/Speed control 2
+#define MOTOR_IN1_PIN 1 // PTA1 - Direction/Speed control 1
+#define MOTOR_IN2_PIN 2 // PTA2 - Direction/Speed control 2
 #define MOTOR_PORT PORTA
 #define MOTOR_GPIO GPIOA
 #define MOTOR_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
@@ -161,13 +161,59 @@ void setTPMClock()
   SIM->SOPT2 |= SIM_SOPT2_TPMSRC(0b11);
 }
 
-void initBuzzer()
+void initAllClockGating()
 {
-  NVIC_DisableIRQ(BUZZER_TIMER_IRQ);
+  // Turn on clock gating to PORTA
+  SIM->SCGC5 |= MOTOR_PORT_CLOCK_GATING_MASK;
+
+  // FOR UART
+  SIM->SCGC4 |= SIM_SCGC4_UART2_MASK;
+  SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
+
+  // FOR ADC
+  SIM->SCGC6 |= SIM_SCGC6_ADC0_MASK;
+  SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
+
+  // Enable clock to PORTA
+  SIM->SCGC5 |= BUTTON_PORT_CLOCK_GATING_MASK;
+
   // Turn on clock gating to TPM1
   SIM->SCGC6 |= BUZZER_TIMER_CLOCK_GATING_MASK;
   // Turn on clock gating to PORTA
   SIM->SCGC5 |= BUZZER_PORT_CLOCK_GATING_MASK;
+}
+
+void disableAllIRQ()
+{
+  // Disable interrupts during setup
+  NVIC_DisableIRQ(BUTTON_PORT_IRQ);
+
+  NVIC_DisableIRQ(BUZZER_TIMER_IRQ);
+
+  NVIC_DisableIRQ(UART2_FLEXIO_IRQn);
+
+  NVIC_DisableIRQ(ADC0_IRQn);
+  NVIC_ClearPendingIRQ(ADC0_IRQn);
+}
+
+void enableAllIRQ()
+{
+  // Enable timer interrupt
+  NVIC_SetPriority(BUZZER_TIMER_IRQ, 1); // High priority (0 = highest, 192 = lowest)
+  NVIC_EnableIRQ(BUZZER_TIMER_IRQ);
+
+  // Enable PORTA interrupt
+  NVIC_SetPriority(BUTTON_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
+  NVIC_ClearPendingIRQ(BUTTON_PORT_IRQ);
+  NVIC_EnableIRQ(BUTTON_PORT_IRQ);
+
+  NVIC_SetPriority(UART2_FLEXIO_IRQn, UART2_INT_PRIO);
+  NVIC_ClearPendingIRQ(UART2_FLEXIO_IRQn);
+  NVIC_EnableIRQ(UART2_FLEXIO_IRQn);
+}
+
+void initBuzzer()
+{
   // Set the pin multiplexor for PWM (TPM1_CH0 is Alt 3 on PTA12)
   BUZZER_PORT->PCR[BUZZER_PIN] &= ~PORT_PCR_MUX_MASK;
   BUZZER_PORT->PCR[BUZZER_PIN] |= PORT_PCR_MUX(0b011); // Alt 3 for TPM1_CH0
@@ -200,17 +246,10 @@ void initBuzzer()
   PRINTF("  - Frequency: 262Hz (middle C)\r\n");
   PRINTF("  - TPM1->MOD: %lu\r\n", BUZZER_TIMER->MOD);
   PRINTF("  - TPM1->CONTROLS[0].CnV: %lu\r\n", BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnV);
-  // Enable timer interrupt
-  NVIC_SetPriority(BUZZER_TIMER_IRQ, 1); // High priority (0 = highest, 192 = lowest)
-  NVIC_EnableIRQ(BUZZER_TIMER_IRQ);
 }
 
 void initButton()
 {
-  // Disable interrupts during setup
-  NVIC_DisableIRQ(BUTTON_PORT_IRQ);
-  // Enable clock to PORTA
-  SIM->SCGC5 |= BUTTON_PORT_CLOCK_GATING_MASK;
   // Configure PTA13 as GPIO
   BUTTON_PORT->PCR[BUTTON_PIN] &= ~PORT_PCR_MUX_MASK;
   BUTTON_PORT->PCR[BUTTON_PIN] |= PORT_PCR_MUX(0b001);
@@ -224,10 +263,6 @@ void initButton()
   // Configure interrupt on falling edge (button press)
   BUTTON_PORT->PCR[BUTTON_PIN] &= ~PORT_PCR_IRQC_MASK;
   BUTTON_PORT->PCR[BUTTON_PIN] |= PORT_PCR_IRQC(0b1010);
-  // Enable PORTA interrupt
-  NVIC_SetPriority(BUTTON_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
-  NVIC_ClearPendingIRQ(BUTTON_PORT_IRQ);
-  NVIC_EnableIRQ(BUTTON_PORT_IRQ);
   // Feedback
   PRINTF("Button initialized on PTA13\r\n");
 }
@@ -243,12 +278,6 @@ void startADC(int channel)
 // INitialize ADC and UART for Soil Moisture Sensor
 void initSoilADC()
 {
-  NVIC_DisableIRQ(ADC0_IRQn);
-  NVIC_ClearPendingIRQ(ADC0_IRQn);
-
-  SIM->SCGC6 |= SIM_SCGC6_ADC0_MASK;
-  SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
-
   // Set pin for ADC input (e.g., PTE20 → ADC0_SE0)
   PORTE->PCR[ADC_PIN] &= ~PORT_PCR_MUX_MASK;
   PORTE->PCR[ADC_PIN] |= PORT_PCR_MUX(0); // ALT0
@@ -284,11 +313,6 @@ void initSoilADC()
 
 void initUART2(uint32_t baud_rate)
 {
-  NVIC_DisableIRQ(UART2_FLEXIO_IRQn);
-
-  SIM->SCGC4 |= SIM_SCGC4_UART2_MASK;
-  SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
-
   UART2->C2 &= ~((UART_C2_TE_MASK) | (UART_C2_RE_MASK));
 
   PORTE->PCR[UART_TX_PTE22] &= ~PORT_PCR_MUX_MASK;
@@ -305,31 +329,24 @@ void initUART2(uint32_t baud_rate)
 
   UART2->C1 = 0x00;             // 8-bit, no parity
   UART2->C2 |= UART_C2_RE_MASK; // enable receiver (for safety)
-
-  NVIC_SetPriority(UART2_FLEXIO_IRQn, UART2_INT_PRIO);
-  NVIC_ClearPendingIRQ(UART2_FLEXIO_IRQn);
-  NVIC_EnableIRQ(UART2_FLEXIO_IRQn);
 }
 
 void initMotor()
 {
-  // Turn on clock gating to PORTA
-  SIM->SCGC5 |= MOTOR_PORT_CLOCK_GATING_MASK;
-  
   // Configure IN1 and IN2 as GPIO outputs
   MOTOR_PORT->PCR[MOTOR_IN1_PIN] &= ~PORT_PCR_MUX_MASK;
   MOTOR_PORT->PCR[MOTOR_IN1_PIN] |= PORT_PCR_MUX(0b001); // GPIO
   MOTOR_PORT->PCR[MOTOR_IN2_PIN] &= ~PORT_PCR_MUX_MASK;
   MOTOR_PORT->PCR[MOTOR_IN2_PIN] |= PORT_PCR_MUX(0b001); // GPIO
-  
+
   // Set IN1 and IN2 as outputs
   MOTOR_GPIO->PDDR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PDDR |= (1 << MOTOR_IN2_PIN);
-  
+
   // Initialize both to LOW (motor stopped)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
-  
+
   PRINTF("Motor driver (DRV8833) initialized:\r\n");
   PRINTF("  - IN1: PTA%d\r\n", MOTOR_IN1_PIN);
   PRINTF("  - IN2: PTA%d\r\n", MOTOR_IN2_PIN);
@@ -622,36 +639,36 @@ static void soilTask(void *p)
 void rollShutter()
 {
   PRINTF("Rolling shutter (moving forward for 5 seconds)...\r\n");
-  
+
   // Set direction: IN1=HIGH, IN2=LOW (forward at full speed)
-  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN1_PIN);  // Set IN1 HIGH
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);  // Set IN2 LOW
-  
+  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN1_PIN); // Set IN1 HIGH
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN); // Set IN2 LOW
+
   // Motor runs for 5 seconds
   vTaskDelay(pdMS_TO_TICKS(5000));
-  
+
   // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
-  
+
   PRINTF("Shutter rolled. Motor stopped.\r\n");
 }
 
 void unrollShutter()
 {
   PRINTF("Unrolling shutter (reversing for 5 seconds)...\r\n");
-  
+
   // Set direction: IN1=LOW, IN2=HIGH (reverse at full speed)
-  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);  // Set IN1 LOW
-  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN2_PIN);  // Set IN2 HIGH
-  
+  MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN); // Set IN1 LOW
+  MOTOR_GPIO->PSOR |= (1 << MOTOR_IN2_PIN); // Set IN2 HIGH
+
   // Motor runs for 5 seconds
   vTaskDelay(pdMS_TO_TICKS(5000));
-  
+
   // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
-  
+
   PRINTF("Shutter unrolled. Motor stopped.\r\n");
 }
 
@@ -720,7 +737,7 @@ void createBuzzerTask()
 void createSoilTask()
 {
   if (xTaskCreate(
-          soilTask, 
+          soilTask,
           "SoilTask",
           configMINIMAL_STACK_SIZE + 100,
           NULL,
@@ -757,20 +774,24 @@ int main(void)
 
   // Initialize hardware
   setTPMClock();
+  initAllClockGating();
+  disableAllIRQ();
+
   initBuzzer();
   initButton();
-  initMotor();
-
-  // Initialize Soil Moisture Sensor ADC and UART
+  // initMotor();
   initSoilADC();
   initUART2(SOIL_BAUD);
-  startADC(ADC_CHANNEL);
-
-  PRINTF("Soil Moisture TX Started\r\n");
 
   // Initialise sempaphores and mutexes
   createBuzzerSemaphore();
   createResourceMutex();
+
+  // Begin operations
+  startADC(ADC_CHANNEL);
+  enableAllIRQ();
+
+  PRINTF("Soil Moisture TX Started\r\n");
 
 // Initialise tasks
 #if MONITOR_ON == 1
