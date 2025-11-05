@@ -804,7 +804,7 @@ int main(void)
   createMonitorTask();
 #endif
   createBuzzerTask();
-  create
+  createSoilTask();
 
       // Start the scheduler
       PRINTF("\r\nStarting FreeRTOS scheduler...\r\n");
