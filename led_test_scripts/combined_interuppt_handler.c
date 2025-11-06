@@ -61,6 +61,10 @@ SemaphoreHandle_t ledSemaphore;   // Semaphore for LED control
 QueueHandle_t uartQueue;          // Queue for UART messages
 
 
+// Soil moisture thresholds (to be tested)
+#define GOOD_MOISTURE 3000  // Very wet (level 3)
+#define MEDIUM_MOISTURE 2300 // Medium (level 2)
+
 
 /* Resource allocation states */
 typedef enum
@@ -192,6 +196,54 @@ void sendMessage(char *message)
     strncpy(send_buffer, message, MAX_MSG_LEN);
     UART2->C2 |= UART_C2_TIE_MASK;  // Enable TX interrupt
     UART2->C2 |= UART_C2_TE_MASK;   // Ensure transmitter is enabled
+}
+
+//  initialize ADC for soil moisture
+static void initSoilADC(void)
+{
+    // Polling mode (no ADC IRQ)
+    NVIC_DisableIRQ(ADC0_IRQn);
+    NVIC_ClearPendingIRQ(ADC0_IRQn);
+
+    // Clocks
+    SIM->SCGC6 |= SIM_SCGC6_ADC0_MASK;
+    SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
+
+    // PTE20 as ADC (ALT0) = ADC0_SE0
+    PORTE->PCR[ADC_PIN] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[ADC_PIN] |= PORT_PCR_MUX(0);
+
+    // Single-ended, 12-bit, software trigger, no averaging
+    ADC0->SC1[0] &= ~ADC_SC1_AIEN_MASK;      // no interrupt
+    ADC0->SC1[0] &= ~ADC_SC1_DIFF_MASK;      // single-ended
+    ADC0->CFG1   &= ~ADC_CFG1_MODE_MASK;
+    ADC0->CFG1   |=  ADC_CFG1_MODE(0b01);    // 12-bit
+    ADC0->SC2    &= ~ADC_SC2_ADTRG_MASK;     // software trigger
+    ADC0->SC2    &= ~ADC_SC2_REFSEL_MASK;
+    ADC0->SC2    |=  ADC_SC2_REFSEL(0b01);   // VALTH/VALTL
+    ADC0->SC3    &= ~ADC_SC3_AVGE_MASK;      // no averaging
+    ADC0->SC3    |=  ADC_SC3_AVGE(0);
+    ADC0->SC3    &= ~ADC_SC3_ADCO_MASK;      // single conversion
+}
+
+static uint16_t read_adc_channel_poll(int channel)
+{
+    // Start conversion
+    ADC0->SC1[0] &= ~ADC_SC1_ADCH_MASK;
+    ADC0->SC1[0] |=  ADC_SC1_ADCH(channel);
+
+    // Wait for conversion complete
+    while (!(ADC0->SC1[0] & ADC_SC1_COCO_MASK)) {
+        ;
+    }
+    return (uint16_t)ADC0->R[0];
+}
+
+static uint8_t adc_to_level(uint16_t raw)
+{
+    if (raw > GOOD_MOISTURE) return 3;
+    else if (raw > MEDIUM_MOISTURE) return 2;
+    else return 1;
 }
 
 /* ============================================================================
@@ -330,9 +382,30 @@ void uartReceiveTask(void *pvParameters)
     }
 }
 
-/* ============================================================================
- * TASK CREATION AND INITIALIZATION
- * ============================================================================ */
+
+
+// TASK CREATION AND INITIALIZATION
+/* Soil moisture polling + TX task */
+static void soilTask(void *pvParameters)
+{
+    PRINTF("Soil task started (ADC ch %d on PTE%d)\r\n", ADC_CHANNEL, ADC_PIN);
+    const TickType_t delay = pdMS_TO_TICKS(1000);
+    while (1)
+    {
+        uint16_t raw = read_adc_channel_poll(ADC_CHANNEL);
+        uint8_t level = adc_to_level(raw);
+
+        char msg[2];
+        msg[0] = (char)('0' + level);
+        msg[1] = '\0';
+
+        // Optional calibration prints
+        PRINTF("Soil ADC=%u -> L%d\r\n", (unsigned)raw, (int)level);
+
+        sendMessage(msg); // TX via ISR
+        vTaskDelay(delay);
+    }
+}
 
 /**
  * @brief   Create all semaphoresandqueue
@@ -393,6 +466,19 @@ void createTasks(void)
         while (1);
     }
     PRINTF("UART task created\r\n");
+
+    // Create Soil task
+    if (xTaskCreate(soilTask,
+                    "SoilTask",
+                    configMINIMAL_STACK_SIZE + 200,
+                    NULL,
+                    tskIDLE_PRIORITY + 1,
+                    NULL) != pdPASS)
+    {
+        PRINTF("ERROR: Failed to create Soil task!\r\n");
+        while (1);
+    }
+    PRINTF("Soil task created\r\n");
 }
 
 /* ============================================================================
@@ -413,6 +499,7 @@ int main(void)
 
     // Initialize hardware
     initUVLED();
+    initSoilADC();
     initUART2(BAUD_RATE);
     initLED();
 
