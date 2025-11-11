@@ -76,13 +76,15 @@
 // UART RX queue length for incoming control chars
 #define QLEN 5
 
-#define SOIL_DELAY_MS 500
+#define SOIL_DELAY_MS 100
 
 #define BAD_MOISTURE 3000    // moisture > 3000 means too dry
 #define MEDIUM_MOISTURE 2000 // 2000 < Moisture < 3000 means decent moisture
 
 /* Monitor delay */
 #define MONITOR_DELAY_MS 5000
+
+#define PRINT
 
 /* Note definitions (frequencies in Hz) */
 #define NOTE_B3 247
@@ -111,7 +113,7 @@
 #define NOTE_REST 0
 
 /* Note duration definitions (in milliseconds) */
-#define TEMPO 10000 // in bpm
+#define TEMPO 2000 // in bpm
 #define QUARTER 60000 / TEMPO
 #define WHOLE QUARTER * 4
 #define HALF QUARTER * 2
@@ -796,7 +798,7 @@ void readUARTTask(void *pvParameters)
     if (xQueueReceive(uartQueue, &receivedChar, portMAX_DELAY) == pdTRUE)
     {
 #ifdef PRINT
-// PRINTF("UART: Received '%c'\r\n", receivedChar);
+PRINTF("UART: Received '%c'\r\n", receivedChar);
 #endif
       if (xSemaphoreTake(resourceMutex, portMAX_DELAY) == pdTRUE)
       {
@@ -806,14 +808,11 @@ void readUARTTask(void *pvParameters)
           {
             electricity_allocation = UV_LIGHTING;
             xSemaphoreGive(ledSemaphore);
-
 #ifdef PRINT
             PRINTF("UART: UV LED activated - Resource allocated\r\n");
-#endif
           }
           else
           {
-#ifdef PRINT
             PRINTF("UART: Resource busy\r\n");
 #endif
           }
@@ -1309,7 +1308,7 @@ int main(void)
 
   // Begin interrupts and stuff
   initAllInterrupts();
-  // startADC(ADC_CHANNEL);
+  startADC(ADC_CHANNEL);
 
   // Initialise tasks
 #if MONITOR_ON == 1
@@ -1330,9 +1329,11 @@ int main(void)
 
   vTaskStartScheduler();
 
-#ifdef PRINT // Print instructions
+#ifdef PRINT 
+  // Print instructions
   PRINTF("Press button on PTA13 to play the song!\r\n\r\n");
-  PRINTF("ERROR: Scheduler failed to start!\r\n"); // Should never reach here
+  // Should never reach here
+  PRINTF("ERROR: Scheduler failed to start!\r\n"); 
 #endif
 
   while (1)
