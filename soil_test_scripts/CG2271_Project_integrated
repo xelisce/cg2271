@@ -616,30 +616,30 @@ void PORTA_IRQHandler(void)
   }
 }
 
-void PORTC_PORTD_IRQHandler(void)
-{
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  // Clear pending IRQ
-  NVIC_ClearPendingIRQ(PORTC_PORTD_IRQn);
-  // Check if our flame sensor (PTB18) triggered the interrupt
-  if (PORTC->ISFR & (1 << FLAME_PIN))
-  {
-    // Read the current pin state
-    uint32_t pinState = (GPIOC->PDIR >> FLAME_PIN) & 1;
-    // Give semaphore to wake up motor task
-    if (pinState)
-    {
-      xSemaphoreGiveFromISR(flamePresentSemaphore, &xHigherPriorityTaskWoken);
-    }
-    else
-    {
-      xSemaphoreGiveFromISR(flameAbsentSemaphore, &xHigherPriorityTaskWoken);
-    }
-    // Perform context switch if needed
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    PORTC->ISFR |= (1 << FLAME_PIN);
-  }
-}
+// void PORTC_PORTD_IRQHandler(void)
+// {
+//   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//   // Clear pending IRQ
+//   NVIC_ClearPendingIRQ(PORTC_PORTD_IRQn);
+//   // Check if our flame sensor (PTB18) triggered the interrupt
+//   if (PORTC->ISFR & (1 << FLAME_PIN))
+//   {
+//     // Read the current pin state
+//     uint32_t pinState = (GPIOC->PDIR >> FLAME_PIN) & 1;
+//     // Give semaphore to wake up motor task
+//     if (pinState)
+//     {
+//       xSemaphoreGiveFromISR(flamePresentSemaphore, &xHigherPriorityTaskWoken);
+//     }
+//     else
+//     {
+//       xSemaphoreGiveFromISR(flameAbsentSemaphore, &xHigherPriorityTaskWoken);
+//     }
+//     // Perform context switch if needed
+//     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+//     PORTC->ISFR |= (1 << FLAME_PIN);
+//   }
+// }
 
 /* ============================================================================
  * MOTOR FUNCTIONS
