@@ -27,7 +27,7 @@
 #define UV_LED_GPIO GPIOA
 #define UV_LED_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
 
-#define LED_ON_DURATION 5000 // ms
+#define LED_ON_DURATION 500 // ms
 
 /* UART Configuration */
 #define BAUD_RATE 9600
@@ -720,15 +720,18 @@ void unrollShutter()
 void ledTask(void *pvParameters)
 {
   PRINTF("LED task started\r\n");
+  turnLEDOff();
   while (1)
   {
-    PRINTF("Turning LED Off");
-    turnLEDOff();
-    // Wait for uart to be 1 (blocks here until semaphore given)
     xSemaphoreTake(ledSemaphore, portMAX_DELAY);
-    PRINTF("Turning LED On");
+
+    // PRINTF("Turning LED On");
     turnLEDOn();
     vTaskDelay(pdMS_TO_TICKS(LED_ON_DURATION));
+
+    // PRINTF("Turning LED Off");
+    turnLEDOff();
+    // Wait for uart to be 1 (blocks here until semaphore given)
 
     if (xSemaphoreTake(resourceMutex, portMAX_DELAY) == pdTRUE)
     {
@@ -753,7 +756,7 @@ void readUARTTask(void *pvParameters)
     char receivedChar;
     if (xQueueReceive(uartQueue, &receivedChar, portMAX_DELAY) == pdTRUE)
     {
-      PRINTF("UART: Received '%c'\r\n", receivedChar);
+      // PRINTF("UART: Received '%c'\r\n", receivedChar);
       if (xSemaphoreTake(resourceMutex, portMAX_DELAY) == pdTRUE)
       {
         if (receivedChar == 'y')
@@ -770,10 +773,10 @@ void readUARTTask(void *pvParameters)
                    (electricity_allocation == BUZZER_PLAYING) ? "BUZZER" : "UV_LIGHT");
           }
         }
-        else if (receivedChar == 'n')
-        {
-          PRINTF("UART: Received 'n' (no action)\r\n");
-        }
+        // else if (receivedChar == 'n')
+        // {
+        //   PRINTF("UART: Received 'n' (no action)\r\n");
+        // }
         xSemaphoreGive(resourceMutex);
       }
     }
@@ -1020,7 +1023,7 @@ void createLEDTask()
                   "LEDTask",
                   configMINIMAL_STACK_SIZE + 100,
                   NULL,
-                  tskIDLE_PRIORITY + 1,
+                  tskIDLE_PRIORITY + 2,
                   NULL) != pdPASS)
   {
     PRINTF("ERROR: Failed to create LED task!\r\n");
@@ -1036,7 +1039,7 @@ void createBuzzerTask()
                   "BuzzerTask",
                   configMINIMAL_STACK_SIZE + 100,
                   NULL,
-                  tskIDLE_PRIORITY + 1,
+                  tskIDLE_PRIORITY + 2,
                   NULL) != pdPASS)
   {
     PRINTF("ERROR: Failed to create buzzer task!\r\n");
@@ -1102,7 +1105,7 @@ void createUARTTask()
                   "UARTTask",
                   configMINIMAL_STACK_SIZE + 100,
                   NULL,
-                  tskIDLE_PRIORITY + 2, // Higher priority for UART
+                  tskIDLE_PRIORITY + 1, // Higher priority for UART
                   NULL) != pdPASS)
   {
     PRINTF("ERROR: Failed to create UART task!\r\n");
