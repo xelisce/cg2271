@@ -23,6 +23,7 @@ const unsigned long SEND_INTERVAL_MS = 1000UL; // send via uart every 60 seconds
 
 // ---------- GLOBALS ----------
 volatile bool pressOccurred = false;
+volatile bool flameOccured = false;
 unsigned long lastSendMillis = 0;
 
 volatile char moistureLevel = '3';  
@@ -206,6 +207,7 @@ void loop() {
 
   if (flameDetected) {
     Serial.println("🔥 Flame detected!");
+    flameOccured = true;
   } else {
     Serial.println("No flame.");
   }
@@ -225,6 +227,7 @@ void loop() {
     Serial.println();
     
     pressOccurred = false; // reset after send
+    flameOccured = false;
   }
 
   delay(10);
