@@ -140,6 +140,9 @@ const uint16_t durations[] = {
 
 const uint8_t melody_length = sizeof(melody) / sizeof(melody[0]);
 
+bool flameOn = false;
+bool prevFlameOn = false;
+
 // global varibales
 char send_buffer[MAX_MSG_LEN];
 QueueHandle_t uartQueue; // Queue for UART RX characters ('y'/'n')
@@ -635,19 +638,24 @@ void UART2_FLEXIO_IRQHandler(void)
     }
   }
 
-  // Enqueue received chars ('y'/'n') for the UART task
+  static char rxBuffer[2];
+  static uint8_t rxIndex = 0;
+
   if (UART2->S1 & UART_S1_RDRF_MASK)
   {
-    char receivedChar = UART2->D; // read clears flag
-    if ((receivedChar == 'y') || (receivedChar == 'n'))
-    {
-      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-      if (uartQueue)
+      char c = UART2->D; // read clears flag
+      rxBuffer[rxIndex++] = c;
+
+      if (rxIndex == 2)
       {
-        xQueueSendFromISR(uartQueue, &receivedChar, &xHigherPriorityTaskWoken);
+          BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+          if (uartQueue)
+          {
+              xQueueSendFromISR(uartQueue, &rxBuffer, &xHigherPriorityTaskWoken);
+          }
+          rxIndex = 0; // reset for next pair
+          portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
       }
-      portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    }
   }
 }
 
@@ -790,38 +798,61 @@ void ledTask(void *pvParameters)
 void readUARTTask(void *pvParameters)
 {
 #ifdef PRINT
-  PRINTF("UART task started - waiting for 'y'/'n' from ESP32...\r\n");
+  PRINTF("UART task started - waiting for 2-char messages ('y/n' + 'x/o')...\r\n");
 #endif
+
+  char rxMsg[2];
+
   while (1)
   {
-    char receivedChar;
-    if (xQueueReceive(uartQueue, &receivedChar, portMAX_DELAY) == pdTRUE)
+    if (xQueueReceive(uartQueue, &rxMsg, portMAX_DELAY) == pdTRUE)
     {
+      char firstChar = rxMsg[0];
+      char secondChar = rxMsg[1]; // 'x' = flame on, 'o' = flame off
+
 #ifdef PRINT
-PRINTF("UART: Received '%c'\r\n", receivedChar);
+      PRINTF("UART: Received [%c, %c]\r\n", firstChar, secondChar);
 #endif
+
+      // --- Handle UV LED as before (first char) ---
       if (xSemaphoreTake(resourceMutex, portMAX_DELAY) == pdTRUE)
       {
-        if (receivedChar == 'y')
+        if (firstChar == 'y')
         {
           if (electricity_allocation == NOTHING)
           {
             electricity_allocation = UV_LIGHTING;
             xSemaphoreGive(ledSemaphore);
 #ifdef PRINT
-            PRINTF("UART: UV LED activated - Resource allocated\r\n");
-          }
-          else
-          {
-            PRINTF("UART: Resource busy\r\n");
+            PRINTF("UART: UV LED activated\r\n");
 #endif
           }
         }
         xSemaphoreGive(resourceMutex);
       }
+
+      // --- Handle Flame Logic (second char) ---
+      prevFlameOn = flameOn;
+      flameOn = (secondChar == 'x'); // x = on, o = off
+
+      if (!prevFlameOn && flameOn)
+      {
+#ifdef PRINT
+        PRINTF("🔥 Transition: Flame OFF → ON, unrolling shutter...\r\n");
+#endif
+        unrollShutter();
+      }
+      else if (prevFlameOn && !flameOn)
+      {
+#ifdef PRINT
+        PRINTF("🔥 Transition: Flame ON → OFF, rolling shutter...\r\n");
+#endif
+        rollShutter();
+      }
     }
   }
 }
+
 
 /**
  * @brief   Buzzer task - waits for semaphore, then plays song
@@ -1285,8 +1316,7 @@ int main(void)
   setTPMClock();
   initBuzzer();
   initButton();
-  // initMotor();
-  // initFlame();
+  initMotor();
   initLED();
 
   // Initialize Soil Moisture Sensor ADC and UART
