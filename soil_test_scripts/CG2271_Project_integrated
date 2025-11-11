@@ -58,13 +58,6 @@
 #define BUTTON_PORT_IRQ PORTA_IRQn
 #define BUTTON_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
 
-/* Flame pin - PTC0 */
-#define FLAME_PIN 0
-#define FLAME_PORT PORTC
-#define FLAME_GPIO GPIOC
-#define FLAME_PORT_IRQ PORTC_PORTD_IRQn
-#define FLAME_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTC_MASK
-
 // Soil Moisture pins
 #define ADC_PIN 20 // PTE20
 #define UART_TX_PTE22 22
@@ -150,8 +143,6 @@ QueueHandle_t uartQueue; // Queue for UART RX characters ('y'/'n')
 /* RTOS Handles */
 SemaphoreHandle_t buzzerSemaphore;       // Released when the button is pressed
 SemaphoreHandle_t resourceMutex = NULL;  // Shared mutex for resource allocation, prevent conflicting access to electricity allocation
-SemaphoreHandle_t flamePresentSemaphore; // Released when there is a fire
-SemaphoreHandle_t flameAbsentSemaphore;  // Released when there is a fire
 SemaphoreHandle_t ledSemaphore;          // Semaphore for LED control
 
 /* Resource allocation states */
@@ -237,31 +228,6 @@ void initBuzzer()
   PRINTF("  - Frequency: 262Hz (middle C)\r\n");
   PRINTF("  - TPM1->MOD: %lu\r\n", BUZZER_TIMER->MOD);
   PRINTF("  - TPM1->CONTROLS[0].CnV: %lu\r\n", BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnV);
-#endif
-}
-
-void initFlame()
-{
-  // Disable interrupts during setup
-  NVIC_DisableIRQ(FLAME_PORT_IRQ);
-  // Enable clock to PORTB
-  SIM->SCGC5 |= FLAME_PORT_CLOCK_GATING_MASK;
-  // Configure PTB18 as GPIO
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_MUX_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_MUX(0b001);
-  // Set pull-up resistor
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PS_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= ~PORT_PCR_PS_MASK; // Pull-down
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PE_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_PE_MASK; // Pull enable
-  // Set as input
-  FLAME_GPIO->PDDR &= ~(1 << FLAME_PIN);
-  // Configure interrupt on either edge (flame change, whether present to not or other way around)
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_IRQC_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_IRQC(0b1011);
-
-#ifdef PRINT // Feedback
-  PRINTF("Flame sensor initialized on PTB18\r\n");
 #endif
 }
 
@@ -379,9 +345,6 @@ void initUART2(uint32_t baud_rate)
 #endif
 }
 
-/**
- * @brief   Initialize Red LED GPIO
- */
 void initLED(void)
 {
   // Set up the clock gating
@@ -423,10 +386,6 @@ void initAllInterrupts()
   // Enable timer interrupt for buzzer
   NVIC_SetPriority(BUZZER_TIMER_IRQ, 1); // High priority (0 = highest, 192 = lowest)
   NVIC_EnableIRQ(BUZZER_TIMER_IRQ);
-  // Enable PORTC interrupt for flame sensor
-  NVIC_SetPriority(FLAME_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
-  NVIC_ClearPendingIRQ(FLAME_PORT_IRQ);
-  NVIC_EnableIRQ(FLAME_PORT_IRQ);
   // Enable PORTA interrupt for button
   NVIC_SetPriority(BUTTON_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
   NVIC_ClearPendingIRQ(BUTTON_PORT_IRQ);
@@ -441,17 +400,11 @@ void initAllInterrupts()
  * LED CONTROL FUNCTIONS
  * ============================================================================ */
 
-/**
- * @brief   Turn Red LED on
- */
 void turnLEDOn(void)
 {
   UV_LED_GPIO->PCOR |= (1 << UV_LED_PIN);
 }
 
-/**
- * @brief   Turn Red LED off
- */
 void turnLEDOff(void)
 {
   UV_LED_GPIO->PSOR |= (1 << UV_LED_PIN);
@@ -492,19 +445,11 @@ void sendMessage(char *message)
   UART2->C2 |= UART_C2_TE_MASK;
 }
 
-/**
- * @brief   Check if UART data is available
- * @return  true if data available, false otherwise
- */
 bool uartDataAvailable(void)
 {
   return (UART2->S1 & UART_S1_RDRF_MASK);
 }
 
-/**
- * @brief   Read a character from UART
- * @return  Received character, or -1 if no data
- */
 int uartReadChar(void)
 {
   if (uartDataAvailable())
@@ -565,11 +510,6 @@ void setBuzzerFrequency(uint16_t frequency)
   BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnV = mod_value / 2;
 }
 
-/**
- * @brief   Play a tone for a duration
- * @param   frequency - Frequency in Hz
- * @param   duration_ms - Duration in milliseconds
- */
 void playTone(uint16_t frequency, uint32_t duration_ms)
 {
   if (frequency == NOTE_REST)
@@ -676,7 +616,7 @@ void PORTA_IRQHandler(void)
   }
 }
 
-void PortC_PORTD_IRQHandler(void)
+void PORTC_PORTD_IRQHandler(void)
 {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   // Clear pending IRQ
@@ -854,9 +794,6 @@ void readUARTTask(void *pvParameters)
 }
 
 
-/**
- * @brief   Buzzer task - waits for semaphore, then plays song
- */
 void buzzerTask(void *pvParameters)
 {
 #ifdef PRINT
@@ -930,61 +867,7 @@ void buzzerTask(void *pvParameters)
   }
 }
 
-/**
- * @brief   Flame task - waits for semaphore, then unrolls shutter
- */
-void motorUnrollTask(void *pvParameters)
-{
-#ifdef PRINT
-  PRINTF("Motor unroll task started - waiting for flame on\r\n");
-#endif
 
-  while (1)
-  {
-    // Wait for flame on (blocks here until semaphore given)
-    xSemaphoreTake(flamePresentSemaphore, portMAX_DELAY);
-
-#ifdef PRINT
-    PRINTF("\r\nFlame present! Requesting motor unroll...\r\n");
-#endif
-
-    unrollShutter();
-
-#ifdef PRINT
-    PRINTF("\r\nFinished unrolling");
-#endif
-  }
-}
-
-/**
- * @brief   Flame task - waits for semaphore, then rolls shutter
- */
-void motorRollTask(void *pvParameters)
-{
-#ifdef PRINT
-  PRINTF("Motor roll task started - waiting for flame off\r\n");
-#endif
-
-  while (1)
-  {
-    // Wait for flame off (blocks here until semaphore given)
-    xSemaphoreTake(flameAbsentSemaphore, portMAX_DELAY);
-
-#ifdef PRINT
-    PRINTF("\r\nFlame absent! Requesting motor roll...\r\n");
-#endif
-
-    rollShutter();
-
-#ifdef PRINT
-    PRINTF("\r\nFinished rolling");
-#endif
-  }
-}
-
-/**
- * @brief   Monitor task - periodically displays electricity allocation status
- */
 void monitorTask(void *pvParameters)
 {
 #ifdef PRINT
@@ -1080,40 +963,6 @@ void createResourceMutex()
 #endif
 }
 
-void createFlamePresentSemaphore()
-{
-  // Create flame present semaphore (binary semaphore for signaling)
-  flamePresentSemaphore = xSemaphoreCreateBinary();
-  if (flamePresentSemaphore == NULL)
-  {
-#ifdef PRINT
-    PRINTF("ERROR: Failed to create flame present semaphore!\r\n");
-#endif
-    while (1)
-      ;
-  }
-#ifdef PRINT
-  PRINTF("Flame present semaphore created\r\n");
-#endif
-}
-
-void createFlameAbsentSemaphore()
-{
-  // Create flame absent semaphore (binary semaphore for signaling)
-  flameAbsentSemaphore = xSemaphoreCreateBinary();
-  if (flameAbsentSemaphore == NULL)
-  {
-#ifdef PRINT
-    PRINTF("ERROR: Failed to create flame absent semaphore!\r\n");
-#endif
-    while (1)
-      ;
-  }
-#ifdef PRINT
-  PRINTF("Flame absent semaphore created\r\n");
-#endif
-}
-
 void createLEDSemaphore()
 {
   // Create LED semaphore (binary semaphore for signaling)
@@ -1191,46 +1040,6 @@ void createBuzzerTask()
 #endif
 }
 
-void createMotorRollTask()
-{
-  if (xTaskCreate(motorRollTask,
-                  "MotorRollTask",
-                  configMINIMAL_STACK_SIZE + 100,
-                  NULL,
-                  tskIDLE_PRIORITY + 1,
-                  NULL) != pdPASS)
-  {
-#ifdef PRINT
-    PRINTF("ERROR: Failed to create motor roll task!\r\n");
-#endif
-    while (1)
-      ;
-  }
-#ifdef PRINT
-  PRINTF("Motor roll task created\r\n");
-#endif
-}
-
-void createMotorUnrollTask()
-{
-  if (xTaskCreate(motorUnrollTask,
-                  "MotorUnrollTask",
-                  configMINIMAL_STACK_SIZE + 100,
-                  NULL,
-                  tskIDLE_PRIORITY + 1,
-                  NULL) != pdPASS)
-  {
-#ifdef PRINT
-    PRINTF("ERROR: Failed to create motor unroll task!\r\n");
-#endif
-    while (1)
-      ;
-  }
-#ifdef PRINT
-  PRINTF("Motor unroll task created\r\n");
-#endif
-}
-
 void createSoilTask()
 {
   if (xTaskCreate(
@@ -1275,7 +1084,7 @@ void createUARTTask()
 
 void createUARTQueue()
 {
-  uartQueue = xQueueCreate(QLEN, sizeof(char));
+  uartQueue = xQueueCreate(QLEN, sizeof(char[2]));
   if (uartQueue == NULL)
   {
 #ifdef PRINT
