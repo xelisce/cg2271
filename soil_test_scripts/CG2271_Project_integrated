@@ -36,7 +36,7 @@
 #define UART2_INT_PRIO 128
 
 /* Motor Pins*/
-#define MOTOR_IN1_PIN 4  // PTD6 -
+#define MOTOR_IN1_PIN 4 // PTD6 -
 #define MOTOR_IN2_PIN 6 // PTD4 -
 #define MOTOR_PORT PORTD
 #define MOTOR_GPIO GPIOD
@@ -79,57 +79,70 @@
 
 #define PRINT
 
-/* Note definitions (frequencies in Hz) */
-#define NOTE_B3 247
-#define NOTE_C4 262
-#define NOTE_CS4 277
-#define NOTE_D4 294
-#define NOTE_DS4 311
-#define NOTE_E4 330
-#define NOTE_F4 349
-#define NOTE_FS4 370
-#define NOTE_G4 392
-#define NOTE_GS4 415
-#define NOTE_A4 440
-#define NOTE_AS4 466
-#define NOTE_B4 494
-#define NOTE_C5 523
-#define NOTE_CS5 554
-#define NOTE_D5 587
-#define NOTE_DS5 622
-#define NOTE_E5 659
-#define NOTE_F5 698
-#define NOTE_FS5 740
-#define NOTE_G5 784
-#define NOTE_GS5 831
-#define NOTE_A5 880
-#define NOTE_REST 0
+#define TEMPO_BPM 800 // Beats per minute (adjust for speed)
+#define WHOLE_MS (240000UL / TEMPO_BPM)
+#define HALF_MS (120000UL / TEMPO_BPM)
+#define QUARTER_MS (60000UL / TEMPO_BPM)
+#define EIGHTH_MS (30000UL / TEMPO_BPM)
+#define SIXTEENTH_MS (15000UL / TEMPO_BPM)
+#define DOTTED_QUARTER_MS (QUARTER_MS + (QUARTER_MS / 2))
+#define DOTTED_EIGHTH_MS (EIGHTH_MS + (EIGHTH_MS / 2))
+#define DEFAULT_NOTE_DELAY_MS 10
 
-/* Note duration definitions (in milliseconds) */
-#define TEMPO 2000 // in bpm
-#define QUARTER 60000 / TEMPO
-#define WHOLE QUARTER * 4
-#define HALF QUARTER * 2
-#define EIGHTH QUARTER / 2
-#define SIXTEENTH QUARTER / 4
-#define DEFAULT_NOTE_DELAY_MS 10 // delay between each note
+/* ============================================
+   NOTE FREQUENCIES
+   ============================================ */
 
-/* "Twinkle Twinkle Little Star" melody */
-const uint16_t melody[] = {
-    NOTE_C4, NOTE_C4, NOTE_G4, NOTE_G4, NOTE_A4, NOTE_A4, NOTE_G4,
-    NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4, NOTE_D4, NOTE_C4,
-    NOTE_G4, NOTE_G4, NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4,
-    NOTE_G4, NOTE_G4, NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4,
-    NOTE_C4, NOTE_C4, NOTE_G4, NOTE_G4, NOTE_A4, NOTE_A4, NOTE_G4,
-    NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4, NOTE_D4, NOTE_C4};
+/*  RickRollCode
 
-const uint16_t durations[] = {
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF};
+    AUTHOR: Rowan Packard
+    rowanpackard@gmail.com
+
+    DISCLAIMER: The song "Never Gonna Give You Up" by Rick Astley
+    is not  the creative property of the author. This code simply
+    plays a Piezo buzzer  rendition of the song.
+*/
+
+#define a3f 208 // 208 Hz
+#define b3f 233 // 233 Hz
+#define b3 247  // 247 Hz
+#define c4 261  // 261 Hz MIDDLE C
+#define c4s 277 // 277 Hz
+#define e4f 311 // 311 Hz
+#define f4 349  // 349 Hz
+#define a4f 415 // 415 Hz
+#define b4f 466 // 466 Hz
+#define b4 493  //  493 Hz
+#define c5 523  // 523 Hz
+#define c5s 554 // 554  Hz
+#define e5f 622 // 622 Hz
+#define f5 698  // 698 Hz
+#define f5s 740 // 740 Hz
+#define a5f 831 // 831 Hz
+
+#define rest -1
+
+//  Parts 4 or 6 (Chorus)
+
+const uint16_t melody[] =
+    {b4f, b4f, a4f, a4f,
+     f5, f5, e5f, b4f, b4f, a4f, a4f, e5f, e5f, c5s, c5, b4f,
+     c5s, c5s, c5s, c5s,
+     c5s, e5f, c5, b4f, a4f, a4f, a4f, e5f, c5s,
+     b4f, b4f, a4f, a4f,
+     f5, f5, e5f, b4f, b4f, a4f, a4f, a5f, c5, c5s, c5, b4f,
+     c5s, c5s, c5s, c5s,
+     c5s, e5f, c5, b4f, a4f, rest, a4f, e5f, c5s, NOTE_REST};
+
+const uint16_t durations[] =
+    {SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS,
+     DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_QUARTER_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, SIXTEENTH_MS, EIGHTH_MS,
+     SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS,
+     DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, SIXTEENTH_MS, EIGHTH_MS, EIGHTH_MS, EIGHTH_MS, QUARTER_MS, HALF_MS,
+     SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS,
+     DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_QUARTER_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, SIXTEENTH_MS, EIGHTH_MS,
+     SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS,
+     DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, SIXTEENTH_MS, EIGHTH_MS, EIGHTH_MS, EIGHTH_MS, QUARTER_MS, HALF_MS, QUARTER_MS};
 
 const uint8_t melody_length = sizeof(melody) / sizeof(melody[0]);
 
@@ -141,9 +154,9 @@ char send_buffer[MAX_MSG_LEN];
 QueueHandle_t uartQueue; // Queue for UART RX characters ('y'/'n')
 
 /* RTOS Handles */
-SemaphoreHandle_t buzzerSemaphore;       // Released when the button is pressed
-SemaphoreHandle_t resourceMutex = NULL;  // Shared mutex for resource allocation, prevent conflicting access to electricity allocation
-SemaphoreHandle_t ledSemaphore;          // Semaphore for LED control
+SemaphoreHandle_t buzzerSemaphore;      // Released when the button is pressed
+SemaphoreHandle_t resourceMutex = NULL; // Shared mutex for resource allocation, prevent conflicting access to electricity allocation
+SemaphoreHandle_t ledSemaphore;         // Semaphore for LED control
 
 /* Resource allocation states */
 typedef enum
@@ -583,19 +596,19 @@ void UART2_FLEXIO_IRQHandler(void)
 
   if (UART2->S1 & UART_S1_RDRF_MASK)
   {
-      char c = UART2->D; // read clears flag
-      rxBuffer[rxIndex++] = c;
+    char c = UART2->D; // read clears flag
+    rxBuffer[rxIndex++] = c;
 
-      if (rxIndex == 2)
+    if (rxIndex == 2)
+    {
+      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+      if (uartQueue)
       {
-          BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-          if (uartQueue)
-          {
-              xQueueSendFromISR(uartQueue, &rxBuffer, &xHigherPriorityTaskWoken);
-          }
-          rxIndex = 0; // reset for next pair
-          portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        xQueueSendFromISR(uartQueue, &rxBuffer, &xHigherPriorityTaskWoken);
       }
+      rxIndex = 0; // reset for next pair
+      portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
   }
 }
 
@@ -795,7 +808,6 @@ void readUARTTask(void *pvParameters)
   }
 }
 
-
 void buzzerTask(void *pvParameters)
 {
 #ifdef PRINT
@@ -868,7 +880,6 @@ void buzzerTask(void *pvParameters)
     // Task will block again at the top of the loop
   }
 }
-
 
 void monitorTask(void *pvParameters)
 {
@@ -1170,11 +1181,11 @@ int main(void)
 
   vTaskStartScheduler();
 
-#ifdef PRINT 
+#ifdef PRINT
   // Print instructions
   PRINTF("Press button on PTA13 to play the song!\r\n\r\n");
   // Should never reach here
-  PRINTF("ERROR: Scheduler failed to start!\r\n"); 
+  PRINTF("ERROR: Scheduler failed to start!\r\n");
 #endif
 
   while (1)

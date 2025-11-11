@@ -27,7 +27,7 @@
 #define UV_LED_GPIO GPIOA
 #define UV_LED_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
 
-#define LED_ON_DURATION 5000 // ms
+#define LED_ON_DURATION 500 // ms
 
 /* UART Configuration */
 #define BAUD_RATE 9600
@@ -36,11 +36,11 @@
 #define UART2_INT_PRIO 128
 
 /* Motor Pins*/
-#define MOTOR_IN1_PIN 5 // PTA5 - 
-#define MOTOR_IN2_PIN 13 // PTA13 - 
-#define MOTOR_PORT PORTA
-#define MOTOR_GPIO GPIOA
-#define MOTOR_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
+#define MOTOR_IN1_PIN 4 // PTD6 -
+#define MOTOR_IN2_PIN 6 // PTD4 -
+#define MOTOR_PORT PORTD
+#define MOTOR_GPIO GPIOD
+#define MOTOR_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTD_MASK
 
 /* Buzzer pin - PTA12 uses TPM1_CH0 */
 #define BUZZER_PIN 12
@@ -58,13 +58,6 @@
 #define BUTTON_PORT_IRQ PORTA_IRQn
 #define BUTTON_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
 
-/* Flame pin - PTC0 */
-#define FLAME_PIN 0
-#define FLAME_PORT PORTC
-#define FLAME_GPIO GPIOC
-#define FLAME_PORT_IRQ PORTC_PORTD_IRQn
-#define FLAME_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTC_MASK
-
 // Soil Moisture pins
 #define ADC_PIN 20 // PTE20
 #define UART_TX_PTE22 22
@@ -73,76 +66,97 @@
 #define SOIL_BAUD 9600
 #define ADC_CHANNEL 0
 #define MAX_MSG_LEN 2 // send only 1 char + null terminator
+// UART RX queue length for incoming control chars
+#define QLEN 5
 
-#define BAD_MOISTURE 3000    // moisture > 3000 means too dry
-#define MEDIUM_MOISTURE 2000 // 2000 < Moisture < 3000 means decent moisture
+#define SOIL_DELAY_MS 100
+
+#define BAD_MOISTURE 3400    // moisture > 3000 means too dry
+#define MEDIUM_MOISTURE 2700 // 2000 < Moisture < 3000 means decent moisture
 
 /* Monitor delay */
-#define MONITOR_DELAY_MS 100
+#define MONITOR_DELAY_MS 5000
 
-/* Note definitions (frequencies in Hz) */
-#define NOTE_B3 247
-#define NOTE_C4 262
-#define NOTE_CS4 277
-#define NOTE_D4 294
-#define NOTE_DS4 311
-#define NOTE_E4 330
-#define NOTE_F4 349
-#define NOTE_FS4 370
-#define NOTE_G4 392
-#define NOTE_GS4 415
-#define NOTE_A4 440
-#define NOTE_AS4 466
-#define NOTE_B4 494
-#define NOTE_C5 523
-#define NOTE_CS5 554
-#define NOTE_D5 587
-#define NOTE_DS5 622
-#define NOTE_E5 659
-#define NOTE_F5 698
-#define NOTE_FS5 740
-#define NOTE_G5 784
-#define NOTE_GS5 831
-#define NOTE_A5 880
-#define NOTE_REST 0
+#define PRINT
 
-/* Note duration definitions (in milliseconds) */
-#define TEMPO 10000 // in bpm
-#define QUARTER 60000 / TEMPO
-#define WHOLE QUARTER * 4
-#define HALF QUARTER * 2
-#define EIGHTH QUARTER / 2
-#define SIXTEENTH QUARTER / 4
-#define DEFAULT_NOTE_DELAY_MS 10 // delay between each note
+#define TEMPO_BPM 800 // Beats per minute (adjust for speed)
+#define WHOLE_MS (240000UL / TEMPO_BPM)
+#define HALF_MS (120000UL / TEMPO_BPM)
+#define QUARTER_MS (60000UL / TEMPO_BPM)
+#define EIGHTH_MS (30000UL / TEMPO_BPM)
+#define SIXTEENTH_MS (15000UL / TEMPO_BPM)
+#define DOTTED_QUARTER_MS (QUARTER_MS + (QUARTER_MS / 2))
+#define DOTTED_EIGHTH_MS (EIGHTH_MS + (EIGHTH_MS / 2))
+#define DEFAULT_NOTE_DELAY_MS 10
 
-/* "Twinkle Twinkle Little Star" melody */
-const uint16_t melody[] = {
-    NOTE_C4, NOTE_C4, NOTE_G4, NOTE_G4, NOTE_A4, NOTE_A4, NOTE_G4,
-    NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4, NOTE_D4, NOTE_C4,
-    NOTE_G4, NOTE_G4, NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4,
-    NOTE_G4, NOTE_G4, NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4,
-    NOTE_C4, NOTE_C4, NOTE_G4, NOTE_G4, NOTE_A4, NOTE_A4, NOTE_G4,
-    NOTE_F4, NOTE_F4, NOTE_E4, NOTE_E4, NOTE_D4, NOTE_D4, NOTE_C4};
+/* ============================================
+   NOTE FREQUENCIES
+   ============================================ */
 
-const uint16_t durations[] = {
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF,
-    QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, QUARTER, HALF};
+/*  RickRollCode
+
+    AUTHOR: Rowan Packard
+    rowanpackard@gmail.com
+
+    DISCLAIMER: The song "Never Gonna Give You Up" by Rick Astley
+    is not  the creative property of the author. This code simply
+    plays a Piezo buzzer  rendition of the song.
+*/
+
+#define a3f 208 // 208 Hz
+#define b3f 233 // 233 Hz
+#define b3 247  // 247 Hz
+#define c4 261  // 261 Hz MIDDLE C
+#define c4s 277 // 277 Hz
+#define e4f 311 // 311 Hz
+#define f4 349  // 349 Hz
+#define a4f 415 // 415 Hz
+#define b4f 466 // 466 Hz
+#define b4 493  //  493 Hz
+#define c5 523  // 523 Hz
+#define c5s 554 // 554  Hz
+#define e5f 622 // 622 Hz
+#define f5 698  // 698 Hz
+#define f5s 740 // 740 Hz
+#define a5f 831 // 831 Hz
+
+#define rest -1
+
+//  Parts 4 or 6 (Chorus)
+
+const uint16_t melody[] =
+    {b4f, b4f, a4f, a4f,
+     f5, f5, e5f, b4f, b4f, a4f, a4f, e5f, e5f, c5s, c5, b4f,
+     c5s, c5s, c5s, c5s,
+     c5s, e5f, c5, b4f, a4f, a4f, a4f, e5f, c5s,
+     b4f, b4f, a4f, a4f,
+     f5, f5, e5f, b4f, b4f, a4f, a4f, a5f, c5, c5s, c5, b4f,
+     c5s, c5s, c5s, c5s,
+     c5s, e5f, c5, b4f, a4f, rest, a4f, e5f, c5s, NOTE_REST};
+
+const uint16_t durations[] =
+    {SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS,
+     DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_QUARTER_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, SIXTEENTH_MS, EIGHTH_MS,
+     SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS,
+     DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, SIXTEENTH_MS, EIGHTH_MS, EIGHTH_MS, EIGHTH_MS, QUARTER_MS, HALF_MS,
+     SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS,
+     DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_QUARTER_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, SIXTEENTH_MS, EIGHTH_MS,
+     SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS,
+     DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, DOTTED_EIGHTH_MS, SIXTEENTH_MS, EIGHTH_MS, EIGHTH_MS, EIGHTH_MS, QUARTER_MS, HALF_MS, QUARTER_MS};
 
 const uint8_t melody_length = sizeof(melody) / sizeof(melody[0]);
 
+bool flameOn = false;
+bool prevFlameOn = false;
+
 // global varibales
 char send_buffer[MAX_MSG_LEN];
+QueueHandle_t uartQueue; // Queue for UART RX characters ('y'/'n')
 
 /* RTOS Handles */
-SemaphoreHandle_t buzzerSemaphore;       // Released when the button is pressed
-SemaphoreHandle_t resourceMutex = NULL;  // Shared mutex for resource allocation, prevent conflicting access to electricity allocation
-SemaphoreHandle_t flamePresentSemaphore; // Released when there is a fire
-SemaphoreHandle_t flameAbsentSemaphore;  // Released when there is a fire
-SemaphoreHandle_t ledSemaphore;          // Semaphore for LED control
+SemaphoreHandle_t buzzerSemaphore;      // Released when the button is pressed
+SemaphoreHandle_t resourceMutex = NULL; // Shared mutex for resource allocation, prevent conflicting access to electricity allocation
+SemaphoreHandle_t ledSemaphore;         // Semaphore for LED control
 
 /* Resource allocation states */
 typedef enum
@@ -217,36 +231,17 @@ void initBuzzer()
                                                          TPM_CnSC_ELSA_MASK | TPM_CnSC_ELSB_MASK);
   BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnSC |= (TPM_CnSC_MSB(1) | TPM_CnSC_ELSB_MASK);
   // Set 50% duty cycle
+
   BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnV = 119; // 50% of 238
+
+#ifdef PRINT
   PRINTF("Buzzer PWM initialized:\r\n");
   PRINTF("  - Pin: PTA12\r\n");
   PRINTF("  - TPM: TPM1 Channel 0\r\n");
   PRINTF("  - Frequency: 262Hz (middle C)\r\n");
   PRINTF("  - TPM1->MOD: %lu\r\n", BUZZER_TIMER->MOD);
   PRINTF("  - TPM1->CONTROLS[0].CnV: %lu\r\n", BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnV);
-}
-
-void initFlame()
-{
-  // Disable interrupts during setup
-  NVIC_DisableIRQ(FLAME_PORT_IRQ);
-  // Enable clock to PORTB
-  SIM->SCGC5 |= FLAME_PORT_CLOCK_GATING_MASK;
-  // Configure PTB18 as GPIO
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_MUX_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_MUX(0b001);
-  // Set pull-up resistor
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PS_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= ~PORT_PCR_PS_MASK; // Pull-down
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PE_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_PE_MASK; // Pull enable
-  // Set as input
-  FLAME_GPIO->PDDR &= ~(1 << FLAME_PIN);
-  // Configure interrupt on either edge (flame change, whether present to not or other way around)
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_IRQC_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_IRQC(0b1011);
-  // Feedback
-  PRINTF("Flame sensor initialized on PTB18\r\n");
+#endif
 }
 
 void initButton()
@@ -268,13 +263,17 @@ void initButton()
   // Configure interrupt on falling edge (button press)
   BUTTON_PORT->PCR[BUTTON_PIN] &= ~PORT_PCR_IRQC_MASK;
   BUTTON_PORT->PCR[BUTTON_PIN] |= PORT_PCR_IRQC(0b1010);
-  // Feedback
+
+#ifdef PRINT // Feedback
   PRINTF("Button initialized on PTA13\r\n");
+#endif
 }
 
 void startADC(int channel)
 {
+#ifdef PRINT
   PRINTF("Started ADC on channel %d. Waiting\r\n", channel);
+#endif
 
   ADC0->SC1[0] &= ~ADC_SC1_ADCH_MASK;
   ADC0->SC1[0] |= ADC_SC1_ADCH(channel);
@@ -319,7 +318,9 @@ void initSoilADC()
   ADC0->SC3 &= ~ADC_SC3_ADCO_MASK;
   ADC0->SC3 |= ADC_SC3_ADCO(0); //                       /* TX only */
 
+#ifdef PRINT
   PRINTF("ADC polling mode initialized on PTE20, Channel 0\r\n");
+#endif
 }
 
 void initUART2(uint32_t baud_rate)
@@ -352,12 +353,11 @@ void initUART2(uint32_t baud_rate)
   // Enable the receiver
   UART2->C2 |= UART_C2_RE_MASK;
 
+#ifdef PRINT
   PRINTF("UART2 initialized on RX=PTE%d, TX=PTE%d\r\n", UART_RX, UART_TX);
+#endif
 }
 
-/**
- * @brief   Initialize Red LED GPIO
- */
 void initLED(void)
 {
   // Set up the clock gating
@@ -386,10 +386,12 @@ void initMotor()
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
 
+#ifdef PRINT
   PRINTF("Motor driver (DRV8833) initialized:\r\n");
   PRINTF("  - IN1: PTA%d\r\n", MOTOR_IN1_PIN);
   PRINTF("  - IN2: PTA%d\r\n", MOTOR_IN2_PIN);
   PRINTF("  - Control: Direct H-bridge (no EN pin)\r\n");
+#endif
 }
 
 void initAllInterrupts()
@@ -397,10 +399,6 @@ void initAllInterrupts()
   // Enable timer interrupt for buzzer
   NVIC_SetPriority(BUZZER_TIMER_IRQ, 1); // High priority (0 = highest, 192 = lowest)
   NVIC_EnableIRQ(BUZZER_TIMER_IRQ);
-  // Enable PORTC interrupt for flame sensor
-  NVIC_SetPriority(FLAME_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
-  NVIC_ClearPendingIRQ(FLAME_PORT_IRQ);
-  NVIC_EnableIRQ(FLAME_PORT_IRQ);
   // Enable PORTA interrupt for button
   NVIC_SetPriority(BUTTON_PORT_IRQ, 128); // Medium priority (0 = highest, 192 = lowest)
   NVIC_ClearPendingIRQ(BUTTON_PORT_IRQ);
@@ -415,17 +413,11 @@ void initAllInterrupts()
  * LED CONTROL FUNCTIONS
  * ============================================================================ */
 
-/**
- * @brief   Turn Red LED on
- */
 void turnLEDOn(void)
 {
   UV_LED_GPIO->PCOR |= (1 << UV_LED_PIN);
 }
 
-/**
- * @brief   Turn Red LED off
- */
 void turnLEDOff(void)
 {
   UV_LED_GPIO->PSOR |= (1 << UV_LED_PIN);
@@ -466,19 +458,11 @@ void sendMessage(char *message)
   UART2->C2 |= UART_C2_TE_MASK;
 }
 
-/**
- * @brief   Check if UART data is available
- * @return  true if data available, false otherwise
- */
 bool uartDataAvailable(void)
 {
   return (UART2->S1 & UART_S1_RDRF_MASK);
 }
 
-/**
- * @brief   Read a character from UART
- * @return  Received character, or -1 if no data
- */
 int uartReadChar(void)
 {
   if (uartDataAvailable())
@@ -539,11 +523,6 @@ void setBuzzerFrequency(uint16_t frequency)
   BUZZER_TIMER->CONTROLS[BUZZER_TIMER_CHANNEL].CnV = mod_value / 2;
 }
 
-/**
- * @brief   Play a tone for a duration
- * @param   frequency - Frequency in Hz
- * @param   duration_ms - Duration in milliseconds
- */
 void playTone(uint16_t frequency, uint32_t duration_ms)
 {
   if (frequency == NOTE_REST)
@@ -563,7 +542,9 @@ void playTone(uint16_t frequency, uint32_t duration_ms)
 
 void playSong()
 {
+#ifdef PRINT
   PRINTF("\r\nPlaying 'Twinkle Twinkle Little Star\r\n");
+#endif
 
   for (uint8_t i = 0; i < melody_length; i++)
   {
@@ -575,12 +556,16 @@ void playSong()
     }
     else
     {
+#ifdef PRINT
       PRINTF("Song interrupted - resource released\r\n"); // but this shouldnt happen, the uv light should also check.
+#endif
       break;
     }
   }
 
+#ifdef PRINT
   PRINTF("Song complete!\r\n\r\n");
+#endif
 }
 
 /* ============================================================================
@@ -605,6 +590,26 @@ void UART2_FLEXIO_IRQHandler(void)
       UART2->D = send_buffer[send_ptr++];
     }
   }
+
+  static char rxBuffer[2];
+  static uint8_t rxIndex = 0;
+
+  if (UART2->S1 & UART_S1_RDRF_MASK)
+  {
+    char c = UART2->D; // read clears flag
+    rxBuffer[rxIndex++] = c;
+
+    if (rxIndex == 2)
+    {
+      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+      if (uartQueue)
+      {
+        xQueueSendFromISR(uartQueue, &rxBuffer, &xHigherPriorityTaskWoken);
+      }
+      rxIndex = 0; // reset for next pair
+      portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+  }
 }
 
 void PORTA_IRQHandler(void)
@@ -624,30 +629,30 @@ void PORTA_IRQHandler(void)
   }
 }
 
-void PortC_PORTD_IRQHandler(void)
-{
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  // Clear pending IRQ
-  NVIC_ClearPendingIRQ(PORTC_PORTD_IRQn);
-  // Check if our flame sensor (PTB18) triggered the interrupt
-  if (PORTC->ISFR & (1 << FLAME_PIN))
-  {
-    // Read the current pin state
-    uint32_t pinState = (GPIOC->PDIR >> FLAME_PIN) & 1;
-    // Give semaphore to wake up motor task
-    if (pinState)
-    {
-      xSemaphoreGiveFromISR(flamePresentSemaphore, &xHigherPriorityTaskWoken);
-    }
-    else
-    {
-      xSemaphoreGiveFromISR(flameAbsentSemaphore, &xHigherPriorityTaskWoken);
-    }
-    // Perform context switch if needed
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    PORTC->ISFR |= (1 << FLAME_PIN);
-  }
-}
+// void PORTC_PORTD_IRQHandler(void)
+// {
+//   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//   // Clear pending IRQ
+//   NVIC_ClearPendingIRQ(PORTC_PORTD_IRQn);
+//   // Check if our flame sensor (PTB18) triggered the interrupt
+//   if (PORTC->ISFR & (1 << FLAME_PIN))
+//   {
+//     // Read the current pin state
+//     uint32_t pinState = (GPIOC->PDIR >> FLAME_PIN) & 1;
+//     // Give semaphore to wake up motor task
+//     if (pinState)
+//     {
+//       xSemaphoreGiveFromISR(flamePresentSemaphore, &xHigherPriorityTaskWoken);
+//     }
+//     else
+//     {
+//       xSemaphoreGiveFromISR(flameAbsentSemaphore, &xHigherPriorityTaskWoken);
+//     }
+//     // Perform context switch if needed
+//     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+//     PORTC->ISFR |= (1 << FLAME_PIN);
+//   }
+// }
 
 /* ============================================================================
  * MOTOR FUNCTIONS
@@ -655,38 +660,48 @@ void PortC_PORTD_IRQHandler(void)
 
 void rollShutter()
 {
+#ifdef PRINT
   PRINTF("Rolling shutter (moving forward for 5 seconds)...\r\n");
+#endif
 
   // Set direction: IN1=HIGH, IN2=LOW (forward at full speed)
   MOTOR_GPIO->PSOR |= (1 << MOTOR_IN1_PIN); // Set IN1 HIGH
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN); // Set IN2 LOW
 
   // Motor runs for 5 seconds
-  vTaskDelay(pdMS_TO_TICKS(5000));
+  vTaskDelay(pdMS_TO_TICKS(300));
 
   // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
 
+#ifdef PRINT
   PRINTF("Shutter rolled. Motor stopped.\r\n");
+#endif
 }
 
 void unrollShutter()
 {
+#ifdef PRINT
   PRINTF("Unrolling shutter (reversing for 5 seconds)...\r\n");
+#endif
 
   // Set direction: IN1=LOW, IN2=HIGH (reverse at full speed)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN); // Set IN1 LOW
   MOTOR_GPIO->PSOR |= (1 << MOTOR_IN2_PIN); // Set IN2 HIGH
 
   // Motor runs for 5 seconds
-  vTaskDelay(pdMS_TO_TICKS(5000));
+  vTaskDelay(pdMS_TO_TICKS(300));
 
   // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
 
+  vTaskDelay(pdMS_TO_TICKS(1000));
+
+#ifdef PRINT
   PRINTF("Shutter unrolled. Motor stopped.\r\n");
+#endif
 }
 
 /* ============================================================================
@@ -698,16 +713,25 @@ void unrollShutter()
  */
 void ledTask(void *pvParameters)
 {
+#ifdef PRINT
   PRINTF("LED task started\r\n");
+#endif
+  turnLEDOff();
   while (1)
   {
-    PRINTF("Turning LED Off");
-    turnLEDOff();
-    // Wait for uart to be 1 (blocks here until semaphore given)
     xSemaphoreTake(ledSemaphore, portMAX_DELAY);
-    PRINTF("Turning LED On");
+
+#ifdef PRINT
+// PRINTF("Turning LED On");
+#endif
     turnLEDOn();
     vTaskDelay(pdMS_TO_TICKS(LED_ON_DURATION));
+
+#ifdef PRINT
+// PRINTF("Turning LED Off");
+#endif
+    turnLEDOff();
+    // Wait for uart to be 1 (blocks here until semaphore given)
 
     if (xSemaphoreTake(resourceMutex, portMAX_DELAY) == pdTRUE)
     {
@@ -716,7 +740,9 @@ void ledTask(void *pvParameters)
     }
     else
     {
+#ifdef PRINT
       PRINTF("Error writing to resource allocation.");
+#endif
     }
   }
 }
@@ -726,59 +752,76 @@ void ledTask(void *pvParameters)
  */
 void readUARTTask(void *pvParameters)
 {
-  PRINTF("UART task started - waiting for knob values...\r\n");
-  PRINTF("Expecting 'y' or 'n' characters from ESP32 at 9600 baud\r\n");
+#ifdef PRINT
+  PRINTF("UART task started - waiting for 2-char messages ('y/n' + 'x/o')...\r\n");
+#endif
+
+  char rxMsg[2];
 
   while (1)
   {
-    int receivedChar = uartReadChar();
-
-    if ((receivedChar == 'y') || (receivedChar == 'n'))
+    if (xQueueReceive(uartQueue, &rxMsg, portMAX_DELAY) == pdTRUE)
     {
-      PRINTF("Character received: '%c' (0x%02X)\r\n", receivedChar, receivedChar);
+      char firstChar = rxMsg[0];
+      char secondChar = rxMsg[1]; // 'x' = flame on, 'o' = flame off
 
-      // Use shared mutex to access resource allocation
+#ifdef PRINT
+      PRINTF("UART: Received [%c, %c]\r\n", firstChar, secondChar);
+#endif
+
+      // --- Handle UV LED as before (first char) ---
       if (xSemaphoreTake(resourceMutex, portMAX_DELAY) == pdTRUE)
       {
-        if (receivedChar == 'y')
+        if (firstChar == 'y')
         {
           if (electricity_allocation == NOTHING)
           {
-            xSemaphoreGive(ledSemaphore);
             electricity_allocation = UV_LIGHTING;
-            PRINTF("UV LED ON - Resource allocated: UV_LIGHTING\r\n");
-          }
-          else
-          {
-            PRINTF("Resource unavailable: %s active\r\n",
-                   (electricity_allocation == BUZZER_PLAYING) ? "BUZZER" : "UV_LIGHT");
+            xSemaphoreGive(ledSemaphore);
+#ifdef PRINT
+            PRINTF("UART: UV LED activated\r\n");
+#endif
           }
         }
         xSemaphoreGive(resourceMutex);
       }
-      else
+
+      // --- Handle Flame Logic (second char) ---
+      prevFlameOn = flameOn;
+      flameOn = (secondChar == 'x'); // x = on, o = off
+
+      if (!prevFlameOn && flameOn)
       {
-        PRINTF("Error accessing resource mutex: readUARTTask");
+#ifdef PRINT
+        PRINTF("🔥 Transition: Flame OFF → ON, unrolling shutter...\r\n");
+#endif
+        unrollShutter();
+      }
+      else if (prevFlameOn && !flameOn)
+      {
+#ifdef PRINT
+        PRINTF("🔥 Transition: Flame ON → OFF, rolling shutter...\r\n");
+#endif
+        rollShutter();
       }
     }
-
-    vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to prevent overwhelming the CPU
   }
 }
 
-/**
- * @brief   Buzzer task - waits for semaphore, then plays song
- */
 void buzzerTask(void *pvParameters)
 {
+#ifdef PRINT
   PRINTF("Buzzer task started - waiting for button press...\r\n");
+#endif
 
   while (1)
   {
     // Wait for button press (blocks here until semaphore given)
     xSemaphoreTake(buzzerSemaphore, portMAX_DELAY);
 
+#ifdef PRINT
     PRINTF("\r\nButton pressed! Requesting buzzer resource...\r\n");
+#endif
 
     // Take mutex to check and modify electricity allocation
     if (xSemaphoreTake(resourceMutex, portMAX_DELAY) == true)
@@ -788,8 +831,11 @@ void buzzerTask(void *pvParameters)
       if (electricity_allocation == NOTHING)
       {
         // Allocate resource to buzzer
+
         electricity_allocation = BUZZER_PLAYING;
+#ifdef PRINT
         PRINTF("Resource allocated: BUZZER_PLAYING\r\n");
+#endif
 
         // Release mutex while playing song
         xSemaphoreGive(resourceMutex);
@@ -799,72 +845,45 @@ void buzzerTask(void *pvParameters)
 
         // Take mutex again to release resource
         xSemaphoreTake(resourceMutex, portMAX_DELAY);
+
         electricity_allocation = NOTHING;
+#ifdef PRINT
         PRINTF("Resource released: NOTHING\r\n");
+#endif
         xSemaphoreGive(resourceMutex);
       }
       else if (electricity_allocation == UV_LIGHTING)
       {
+#ifdef PRINT
         PRINTF("Resource unavailable: UV_LIGHTING is active\r\n");
+#endif
         xSemaphoreGive(resourceMutex); // if we want to have it queued up then we don't give up the mutex here
       }
       else
       {
+#ifdef PRINT
         PRINTF("Resource unavailable: BUZZER already playing\r\n");
+#endif
         xSemaphoreGive(resourceMutex);
       }
     }
     else
     {
+#ifdef PRINT
       PRINTF("[Buzzer] Unable to read resource status (mutex timeout)\r\n");
+#endif
     }
 
+#ifdef PRINT
     PRINTF("Ready for next button press...\r\n");
+#endif
     // Task will block again at the top of the loop
   }
 }
 
-/**
- * @brief   Flame task - waits for semaphore, then unrolls shutter
- */
-void motorUnrollTask(void *pvParameters)
-{
-  PRINTF("Motor unroll task started - waiting for flame on\r\n");
-
-  while (1)
-  {
-    // Wait for flame on (blocks here until semaphore given)
-    xSemaphoreTake(flamePresentSemaphore, portMAX_DELAY);
-
-    PRINTF("\r\nFlame present! Requesting motor unroll...\r\n");
-    unrollShutter();
-    PRINTF("\r\nFinished unrolling");
-  }
-}
-
-/**
- * @brief   Flame task - waits for semaphore, then rolls shutter
- */
-void motorRollTask(void *pvParameters)
-{
-  PRINTF("Motor roll task started - waiting for flame off\r\n");
-
-  while (1)
-  {
-    // Wait for flame off (blocks here until semaphore given)
-    xSemaphoreTake(flameAbsentSemaphore, portMAX_DELAY);
-
-    PRINTF("\r\nFlame absent! Requesting motor roll...\r\n");
-    rollShutter();
-    PRINTF("\r\nFinished rolling");
-  }
-}
-
-/**
- * @brief   Monitor task - periodically displays electricity allocation status
- */
 void monitorTask(void *pvParameters)
 {
+#ifdef PRINT
   PRINTF("Monitor task started\r\n\r\n");
 
   const char *stateNames[] = {"NOTHING", "UV_LIGHTING", "BUZZER_PLAYING"};
@@ -877,9 +896,9 @@ void monitorTask(void *pvParameters)
     // Read shared variable (protected by mutex)
     if (xSemaphoreTake(resourceMutex, pdMS_TO_TICKS(100)) == pdTRUE)
     {
-      ResourceState currentState = electricity_allocation;
       xSemaphoreGive(resourceMutex);
 
+      ResourceState currentState = electricity_allocation;
       PRINTF("[Monitor] State: %s | Free heap: %u | Min heap: %u\r\n",
              stateNames[currentState],
              xPortGetFreeHeapSize(),
@@ -890,12 +909,13 @@ void monitorTask(void *pvParameters)
       PRINTF("[Monitor] Unable to read resource status (mutex timeout)\r\n");
     }
   }
+#endif
 }
 
 // Soil Moisture Task
 static void soilTask(void *p)
 {
-  const TickType_t delay = pdMS_TO_TICKS(100);
+  const TickType_t delay = pdMS_TO_TICKS(SOIL_DELAY_MS);
   while (1)
   {
     int raw = read_adc_channel_poll(ADC_CHANNEL);
@@ -905,9 +925,10 @@ static void soilTask(void *p)
     msg[0] = '0' + level;
     msg[1] = '\0';
 
-    // Print for debugging
+#ifdef PRINT
     PRINTF("Water level is at %c\n", msg[0]);
     PRINTF("Raw ADC: %d, Level: %d\r\n", raw, level);
+#endif
 
     sendMessage(msg);
 
@@ -925,11 +946,16 @@ void createBuzzerSemaphore()
   buzzerSemaphore = xSemaphoreCreateBinary();
   if (buzzerSemaphore == NULL)
   {
+#ifdef PRINT
     PRINTF("ERROR: Failed to create buzzer semaphore!\r\n");
+#endif
     while (1)
       ;
   }
+
+#ifdef PRINT
   PRINTF("Buzzer semaphore created\r\n");
+#endif
 }
 
 void createResourceMutex()
@@ -938,37 +964,16 @@ void createResourceMutex()
   resourceMutex = xSemaphoreCreateMutex();
   if (resourceMutex == NULL)
   {
+#ifdef PRINT
     PRINTF("ERROR: Failed to create resource mutex!\r\n");
+#endif
     while (1)
       ;
   }
+
+#ifdef PRINT
   PRINTF("Resource mutex created\r\n");
-}
-
-void createFlamePresentSemaphore()
-{
-  // Create flame present semaphore (binary semaphore for signaling)
-  flamePresentSemaphore = xSemaphoreCreateBinary();
-  if (flamePresentSemaphore == NULL)
-  {
-    PRINTF("ERROR: Failed to create flame present semaphore!\r\n");
-    while (1)
-      ;
-  }
-  PRINTF("Flame present semaphore created\r\n");
-}
-
-void createFlameAbsentSemaphore()
-{
-  // Create flame absent semaphore (binary semaphore for signaling)
-  flameAbsentSemaphore = xSemaphoreCreateBinary();
-  if (flameAbsentSemaphore == NULL)
-  {
-    PRINTF("ERROR: Failed to create flame absent semaphore!\r\n");
-    while (1)
-      ;
-  }
-  PRINTF("Flame absent semaphore created\r\n");
+#endif
 }
 
 void createLEDSemaphore()
@@ -977,11 +982,15 @@ void createLEDSemaphore()
   ledSemaphore = xSemaphoreCreateBinary();
   if (ledSemaphore == NULL)
   {
+#ifdef PRINT
     PRINTF("ERROR: Failed to create LED semaphore!\r\n");
+#endif
     while (1)
       ;
   }
+#ifdef PRINT
   PRINTF("LED semaphore created\r\n");
+#endif
 }
 
 void createMonitorTask()
@@ -993,11 +1002,15 @@ void createMonitorTask()
                   tskIDLE_PRIORITY + 1, // higher priority is higher
                   NULL) != pdPASS)
   {
+#ifdef PRINT
     PRINTF("ERROR: Failed to create monitor task!\r\n");
+#endif
     while (1)
       ;
   }
+#ifdef PRINT
   PRINTF("Monitor task created\r\n");
+#endif
 }
 
 void createLEDTask()
@@ -1006,14 +1019,18 @@ void createLEDTask()
                   "LEDTask",
                   configMINIMAL_STACK_SIZE + 100,
                   NULL,
-                  tskIDLE_PRIORITY + 1,
+                  tskIDLE_PRIORITY + 2,
                   NULL) != pdPASS)
   {
+#ifdef PRINT
     PRINTF("ERROR: Failed to create LED task!\r\n");
+#endif
     while (1)
       ;
   }
+#ifdef PRINT
   PRINTF("LED task created\r\n");
+#endif
 }
 
 void createBuzzerTask()
@@ -1022,46 +1039,18 @@ void createBuzzerTask()
                   "BuzzerTask",
                   configMINIMAL_STACK_SIZE + 100,
                   NULL,
-                  tskIDLE_PRIORITY + 1,
+                  tskIDLE_PRIORITY + 2,
                   NULL) != pdPASS)
   {
+#ifdef PRINT
     PRINTF("ERROR: Failed to create buzzer task!\r\n");
+#endif
     while (1)
       ;
   }
+#ifdef PRINT
   PRINTF("Buzzer task created\r\n");
-}
-
-void createMotorRollTask()
-{
-  if (xTaskCreate(motorRollTask,
-                  "MotorRollTask",
-                  configMINIMAL_STACK_SIZE + 100,
-                  NULL,
-                  tskIDLE_PRIORITY + 1,
-                  NULL) != pdPASS)
-  {
-    PRINTF("ERROR: Failed to create motor roll task!\r\n");
-    while (1)
-      ;
-  }
-  PRINTF("Motor roll task created\r\n");
-}
-
-void createMotorUnrollTask()
-{
-  if (xTaskCreate(motorUnrollTask,
-                  "MotorUnrollTask",
-                  configMINIMAL_STACK_SIZE + 100,
-                  NULL,
-                  tskIDLE_PRIORITY + 1,
-                  NULL) != pdPASS)
-  {
-    PRINTF("ERROR: Failed to create motor unroll task!\r\n");
-    while (1)
-      ;
-  }
-  PRINTF("Motor unroll task created\r\n");
+#endif
 }
 
 void createSoilTask()
@@ -1074,11 +1063,15 @@ void createSoilTask()
           tskIDLE_PRIORITY + 1,
           NULL) != pdPASS)
   {
+#ifdef PRINT
     PRINTF("ERROR: Failed to create soil task!\r\n");
+#endif
     while (1)
       ;
   }
+#ifdef PRINT
   PRINTF("Soil task created\r\n");
+#endif
 }
 
 void createUARTTask()
@@ -1088,14 +1081,34 @@ void createUARTTask()
                   "UARTTask",
                   configMINIMAL_STACK_SIZE + 100,
                   NULL,
-                  tskIDLE_PRIORITY + 2, // Higher priority for UART
+                  tskIDLE_PRIORITY + 1, // Higher priority for UART
                   NULL) != pdPASS)
   {
+#ifdef PRINT
     PRINTF("ERROR: Failed to create UART task!\r\n");
+#endif
     while (1)
       ;
   }
+#ifdef PRINT
   PRINTF("UART task created\r\n");
+#endif
+}
+
+void createUARTQueue()
+{
+  uartQueue = xQueueCreate(QLEN, sizeof(char[2]));
+  if (uartQueue == NULL)
+  {
+#ifdef PRINT
+    PRINTF("ERROR: Failed to create UART queue!\r\n");
+#endif
+    while (1)
+      ;
+  }
+#ifdef PRINT
+  PRINTF("UART queue created\r\n");
+#endif
 }
 
 int main(void)
@@ -1108,6 +1121,7 @@ int main(void)
   BOARD_InitDebugConsole();
 #endif
 
+#ifdef PRINT
   PRINTF("\r\n========================================\r\n");
   PRINTF("  RTOS BUZZER PROJECT\r\n");
   PRINTF("========================================\r\n");
@@ -1118,54 +1132,62 @@ int main(void)
   PRINTF("  - UV_LIGHTING: UV light active\r\n");
   PRINTF("  - BUZZER_PLAYING: Buzzer active\r\n");
   PRINTF("========================================\r\n\r\n");
+#endif
 
   // Initialize hardware
   setTPMClock();
   initBuzzer();
   initButton();
-  // initMotor();
-  // initFlame();
-  // initLED();
+  initMotor();
+  initLED();
 
   // Initialize Soil Moisture Sensor ADC and UART
-  // initSoilADC();
-  // initUART2(SOIL_BAUD);
-  // PRINTF("Soil Moisture TX Started\r\n");
+  initSoilADC();
+
+  initUART2(SOIL_BAUD);
+#ifdef PRINT
+  PRINTF("Soil Moisture TX Started\r\n");
+#endif
 
   // Initialise sempaphores and mutexes
   createResourceMutex();
 
   createBuzzerSemaphore();
+  createLEDSemaphore();
+  createUARTQueue();
   // createFlamePresentSemaphore();
   // createFlameAbsentSemaphore();
-  // createLEDSemaphore();
 
   // Begin interrupts and stuff
   initAllInterrupts();
-  // startADC(ADC_CHANNEL);
+  startADC(ADC_CHANNEL);
 
   // Initialise tasks
 #if MONITOR_ON == 1
   createMonitorTask();
 #endif
   createBuzzerTask();
-  // createSoilTask();
+  createSoilTask();
   // createMotorRollTask();
   // createMotorUnrollTask();
-  // createUARTTask();
-  // createLEDTask();
+  createUARTTask();
+  createLEDTask();
 
-  // Start the scheduler
+#ifdef PRINT
   PRINTF("\r\nStarting FreeRTOS scheduler...\r\n");
   PRINTF("About to start scheduler. Heap free: %d bytes\r\n",
          xPortGetFreeHeapSize());
+#endif
+
   vTaskStartScheduler();
 
+#ifdef PRINT
   // Print instructions
   PRINTF("Press button on PTA13 to play the song!\r\n\r\n");
-
   // Should never reach here
   PRINTF("ERROR: Scheduler failed to start!\r\n");
+#endif
+
   while (1)
   {
     __asm volatile("nop");
