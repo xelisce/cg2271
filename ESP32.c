@@ -17,12 +17,18 @@ const int ECHO_PIN = 15;
 const float DISTANCE_THRESHOLD_CM = 15.0;
 const unsigned long SEND_INTERVAL_MS = 1000UL; // send via uart every 60 seconds
 
+// Flame sensor (KY-026)
+#define FLAME_ANALOG_PIN A0     // KY-026 analog pin
+#define FLAME_THRESHOLD 7200     // lower value = stronger flame
+
 // ---------- GLOBALS ----------
 volatile bool pressOccurred = false;
 unsigned long lastSendMillis = 0;
 
 volatile char moistureLevel = '3';  
 portMUX_TYPE moistureMux = portMUX_INITIALIZER_UNLOCKED;
+
+#define FLAME_ANALOG_PIN A0   // KY-026 A0 → Arduino A0
 
 // UART event queue
 QueueHandle_t uart_queue;
@@ -72,6 +78,16 @@ float getDistance() {
   
   float distance = duration * 0.0343 / 2.0;
   return distance;
+}
+
+// ---------- FLAME SENSOR ----------
+bool isFlameDetected() {
+  int flameValue = analogRead(FLAME_ANALOG_PIN);
+  Serial.print("Flame analog value: ");
+  Serial.print(flameValue);
+  Serial.print(" | Threshold: ");
+  Serial.println(FLAME_THRESHOLD);
+  return (flameValue < FLAME_THRESHOLD); // true if flame detected
 }
 
 // ---------- UART EVENT TASK ----------
@@ -186,17 +202,29 @@ void loop() {
     // Serial.println(" cm");
   }
 
+  bool flameDetected = isFlameDetected();
+
+  if (flameDetected) {
+    Serial.println("🔥 Flame detected!");
+  } else {
+    Serial.println("No flame.");
+  }
+
   unsigned long now = millis();
   if (now - lastSendMillis >= SEND_INTERVAL_MS) {
     lastSendMillis = now;
-    char outChar = pressOccurred ? 'y' : 'n';
+    char firstChar = pressOccurred ? 'y' : 'n';   // object detection
+    char secondChar = flameDetected ? 'x' : 'o';  // flame detection
     
-    // Send via UART
-    uart_write_bytes(UART_NUM, &outChar, 1);
+    char outMsg[3] = { firstChar, secondChar, '\0' };
+    uart_write_bytes(UART_NUM, outMsg, 2);
+
+    Serial.print("Sent: ");
+    Serial.print(outMsg[0]);
+    Serial.print(outMsg[1]);
+    Serial.println();
     
-    Serial.print("Sent object detection status: ");
-    Serial.println(outChar);
-    pressOccurred = false;  // Reset after sending
+    pressOccurred = false; // reset after send
   }
 
   delay(10);
