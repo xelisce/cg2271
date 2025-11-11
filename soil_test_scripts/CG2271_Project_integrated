@@ -36,8 +36,8 @@
 #define UART2_INT_PRIO 128
 
 /* Motor Pins*/
-#define MOTOR_IN1_PIN 5 // PTA5 - 
-#define MOTOR_IN2_PIN 13 // PTA13 - 
+#define MOTOR_IN1_PIN 5 // PTA5 -
+#define MOTOR_IN2_PIN 13 // PTA13 -
 #define MOTOR_PORT PORTA
 #define MOTOR_GPIO GPIOA
 #define MOTOR_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
@@ -231,25 +231,24 @@ void initBuzzer()
 
 void initFlame()
 {
-  // Disable interrupts during setup
-  NVIC_DisableIRQ(FLAME_PORT_IRQ);
-  // Enable clock to PORTB
-  SIM->SCGC5 |= FLAME_PORT_CLOCK_GATING_MASK;
-  // Configure PTB18 as GPIO
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_MUX_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_MUX(0b001);
-  // Set pull-up resistor
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PS_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= ~PORT_PCR_PS_MASK; // Pull-down
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_PE_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_PE_MASK; // Pull enable
-  // Set as input
-  FLAME_GPIO->PDDR &= ~(1 << FLAME_PIN);
-  // Configure interrupt on either edge (flame change, whether present to not or other way around)
-  FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_IRQC_MASK;
-  FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_IRQC(0b1011);
-  // Feedback
-  PRINTF("Flame sensor initialized on PTB18\r\n");
+    NVIC_DisableIRQ(FLAME_PORT_IRQ);
+    SIM->SCGC5 |= FLAME_PORT_CLOCK_GATING_MASK;
+
+    // Configure PTC0 as GPIO
+    FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_MUX_MASK;
+    FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_MUX(0b001); // GPIO
+
+    // Enable pull-up (sensor output is open collector)
+    FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_PE_MASK | PORT_PCR_PS_MASK;
+
+    // Input mode
+    FLAME_GPIO->PDDR &= ~(1 << FLAME_PIN);
+
+    // Interrupt on either edge (detect fire ON/OFF transitions)
+    FLAME_PORT->PCR[FLAME_PIN] &= ~PORT_PCR_IRQC_MASK;
+    FLAME_PORT->PCR[FLAME_PIN] |= PORT_PCR_IRQC(0b1011);
+
+    PRINTF("Flame sensor initialized on PTC%d\r\n", FLAME_PIN);
 }
 
 void initButton()
@@ -647,27 +646,26 @@ void PORTA_IRQHandler(void)
 
 void PortC_PORTD_IRQHandler(void)
 {
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  // Clear pending IRQ
-  NVIC_ClearPendingIRQ(PORTC_PORTD_IRQn);
-  // Check if our flame sensor (PTB18) triggered the interrupt
-  if (PORTC->ISFR & (1 << FLAME_PIN))
-  {
-    // Read the current pin state
-    uint32_t pinState = (GPIOC->PDIR >> FLAME_PIN) & 1;
-    // Give semaphore to wake up motor task
-    if (pinState)
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    NVIC_ClearPendingIRQ(PORTC_PORTD_IRQn);
+
+    if (PORTC->ISFR & (1 << FLAME_PIN))
     {
-      xSemaphoreGiveFromISR(flamePresentSemaphore, &xHigherPriorityTaskWoken);
+        uint32_t pinState = (GPIOC->PDIR >> FLAME_PIN) & 1;
+        if (pinState == 0)
+        {
+            // Fire detected
+            xSemaphoreGiveFromISR(flamePresentSemaphore, &xHigherPriorityTaskWoken);
+        }
+        else
+        {
+            // Fire ended
+            xSemaphoreGiveFromISR(flameAbsentSemaphore, &xHigherPriorityTaskWoken);
+        }
+
+        PORTC->ISFR |= (1 << FLAME_PIN);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
-    else
-    {
-      xSemaphoreGiveFromISR(flameAbsentSemaphore, &xHigherPriorityTaskWoken);
-    }
-    // Perform context switch if needed
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    PORTC->ISFR |= (1 << FLAME_PIN);
-  }
 }
 
 /* ============================================================================
@@ -841,9 +839,29 @@ void buzzerTask(void *pvParameters)
   }
 }
 
-/**
- * @brief   Flame task - waits for semaphore, then unrolls shutter
- */
+ void flameTask(void *pvParameters)
+{
+    PRINTF("Flame task started - monitoring fire status...\r\n");
+
+    while (1)
+    {
+        // Wait for semaphore when flame status changes
+        if (xSemaphoreTake(flamePresentSemaphore, pdMS_TO_TICKS(50)) == pdTRUE)
+        {
+            PRINTF("[FlameTask] Fire detected! Unrolling shutter...\r\n");
+            unrollShutter();
+        }
+
+        if (xSemaphoreTake(flameAbsentSemaphore, pdMS_TO_TICKS(50)) == pdTRUE)
+        {
+            PRINTF("[FlameTask] Fire gone! Rolling shutter...\r\n");
+            rollShutter();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100)); // Small delay to prevent task starvation
+    }
+}
+
 void motorUnrollTask(void *pvParameters)
 {
   PRINTF("Motor unroll task started - waiting for flame on\r\n");
@@ -1127,6 +1145,20 @@ void createUARTQueue()
   PRINTF("UART queue created\r\n");
 }
 
+void createFlameTask()
+{
+    if (xTaskCreate(flameTask,
+                    "FlameTask",
+                    configMINIMAL_STACK_SIZE + 150,
+                    NULL,
+                    tskIDLE_PRIORITY + 2,
+                    NULL) != pdPASS)
+    {
+        PRINTF("ERROR: Failed to create flame task!\r\n");
+        while (1);
+    }
+    PRINTF("Flame task created\r\n");
+}
 
 int main(void)
 {
@@ -1153,8 +1185,8 @@ int main(void)
   setTPMClock();
   initBuzzer();
   initButton();
-  // initMotor();
-  // initFlame();
+  initMotor();
+  initFlame();
   initLED();
 
   // Initialize Soil Moisture Sensor ADC and UART
@@ -1168,8 +1200,8 @@ int main(void)
   createBuzzerSemaphore();
   createLEDSemaphore();
   createUARTQueue();
-  // createFlamePresentSemaphore();
-  // createFlameAbsentSemaphore();
+  createFlamePresentSemaphore();
+  createFlameAbsentSemaphore();
 
   // Begin interrupts and stuff
   initAllInterrupts();
@@ -1181,10 +1213,11 @@ int main(void)
 #endif
   createBuzzerTask();
   createSoilTask();
-  // createMotorRollTask();
-  // createMotorUnrollTask();
+  createMotorRollTask();
+  createMotorUnrollTask();
   createUARTTask();
   createLEDTask();
+  createFlameTask();
 
   // Start the scheduler
   PRINTF("\r\nStarting FreeRTOS scheduler...\r\n");
