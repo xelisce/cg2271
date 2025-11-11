@@ -36,11 +36,11 @@
 #define UART2_INT_PRIO 128
 
 /* Motor Pins*/
-#define MOTOR_IN1_PIN 5  // PTA5 -
-#define MOTOR_IN2_PIN 13 // PTA13 -
-#define MOTOR_PORT PORTA
-#define MOTOR_GPIO GPIOA
-#define MOTOR_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTA_MASK
+#define MOTOR_IN1_PIN 4  // PTD6 -
+#define MOTOR_IN2_PIN 6 // PTD4 -
+#define MOTOR_PORT PORTD
+#define MOTOR_GPIO GPIOD
+#define MOTOR_PORT_CLOCK_GATING_MASK SIM_SCGC5_PORTD_MASK
 
 /* Buzzer pin - PTA12 uses TPM1_CH0 */
 #define BUZZER_PIN 12
@@ -71,8 +71,8 @@
 
 #define SOIL_DELAY_MS 100
 
-#define BAD_MOISTURE 3000    // moisture > 3000 means too dry
-#define MEDIUM_MOISTURE 2000 // 2000 < Moisture < 3000 means decent moisture
+#define BAD_MOISTURE 3400    // moisture > 3000 means too dry
+#define MEDIUM_MOISTURE 2700 // 2000 < Moisture < 3000 means decent moisture
 
 /* Monitor delay */
 #define MONITOR_DELAY_MS 5000
@@ -616,30 +616,30 @@ void PORTA_IRQHandler(void)
   }
 }
 
-void PORTC_PORTD_IRQHandler(void)
-{
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-  // Clear pending IRQ
-  NVIC_ClearPendingIRQ(PORTC_PORTD_IRQn);
-  // Check if our flame sensor (PTB18) triggered the interrupt
-  if (PORTC->ISFR & (1 << FLAME_PIN))
-  {
-    // Read the current pin state
-    uint32_t pinState = (GPIOC->PDIR >> FLAME_PIN) & 1;
-    // Give semaphore to wake up motor task
-    if (pinState)
-    {
-      xSemaphoreGiveFromISR(flamePresentSemaphore, &xHigherPriorityTaskWoken);
-    }
-    else
-    {
-      xSemaphoreGiveFromISR(flameAbsentSemaphore, &xHigherPriorityTaskWoken);
-    }
-    // Perform context switch if needed
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-    PORTC->ISFR |= (1 << FLAME_PIN);
-  }
-}
+// void PORTC_PORTD_IRQHandler(void)
+// {
+//   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//   // Clear pending IRQ
+//   NVIC_ClearPendingIRQ(PORTC_PORTD_IRQn);
+//   // Check if our flame sensor (PTB18) triggered the interrupt
+//   if (PORTC->ISFR & (1 << FLAME_PIN))
+//   {
+//     // Read the current pin state
+//     uint32_t pinState = (GPIOC->PDIR >> FLAME_PIN) & 1;
+//     // Give semaphore to wake up motor task
+//     if (pinState)
+//     {
+//       xSemaphoreGiveFromISR(flamePresentSemaphore, &xHigherPriorityTaskWoken);
+//     }
+//     else
+//     {
+//       xSemaphoreGiveFromISR(flameAbsentSemaphore, &xHigherPriorityTaskWoken);
+//     }
+//     // Perform context switch if needed
+//     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+//     PORTC->ISFR |= (1 << FLAME_PIN);
+//   }
+// }
 
 /* ============================================================================
  * MOTOR FUNCTIONS
@@ -656,7 +656,7 @@ void rollShutter()
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN); // Set IN2 LOW
 
   // Motor runs for 5 seconds
-  vTaskDelay(pdMS_TO_TICKS(5000));
+  vTaskDelay(pdMS_TO_TICKS(300));
 
   // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
@@ -678,11 +678,13 @@ void unrollShutter()
   MOTOR_GPIO->PSOR |= (1 << MOTOR_IN2_PIN); // Set IN2 HIGH
 
   // Motor runs for 5 seconds
-  vTaskDelay(pdMS_TO_TICKS(5000));
+  vTaskDelay(pdMS_TO_TICKS(300));
 
   // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN);
+
+  vTaskDelay(pdMS_TO_TICKS(1000));
 
 #ifdef PRINT
   PRINTF("Shutter unrolled. Motor stopped.\r\n");
