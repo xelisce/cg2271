@@ -132,7 +132,7 @@ const uint16_t melody[] =
      b4f, b4f, a4f, a4f,
      f5, f5, e5f, b4f, b4f, a4f, a4f, a5f, c5, c5s, c5, b4f,
      c5s, c5s, c5s, c5s,
-     c5s, e5f, c5, b4f, a4f, rest, a4f, e5f, c5s, NOTE_REST};
+     c5s, e5f, c5, b4f, a4f, rest, a4f, e5f, c5s, rest};
 
 const uint16_t durations[] =
     {SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS, SIXTEENTH_MS,
@@ -525,7 +525,7 @@ void setBuzzerFrequency(uint16_t frequency)
 
 void playTone(uint16_t frequency, uint32_t duration_ms)
 {
-  if (frequency == NOTE_REST)
+  if (frequency == rest)
   {
     stopBuzzer();
   }
@@ -669,7 +669,7 @@ void rollShutter()
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN2_PIN); // Set IN2 LOW
 
   // Motor runs for 5 seconds
-  vTaskDelay(pdMS_TO_TICKS(300));
+  vTaskDelay(pdMS_TO_TICKS(1570));
 
   // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
@@ -691,7 +691,7 @@ void unrollShutter()
   MOTOR_GPIO->PSOR |= (1 << MOTOR_IN2_PIN); // Set IN2 HIGH
 
   // Motor runs for 5 seconds
-  vTaskDelay(pdMS_TO_TICKS(300));
+  vTaskDelay(pdMS_TO_TICKS(150));
 
   // Stop motor: IN1=LOW, IN2=LOW (coast stop)
   MOTOR_GPIO->PCOR |= (1 << MOTOR_IN1_PIN);
